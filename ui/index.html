@@ -541,7 +541,7 @@ function openLightbox(kind, name, promptText, title){
   const acts = [];
   if(kind !== 'ref') acts.push(`<button class="lbb prim" data-a="useref"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Use as reference</button>`);
   acts.push(`<a class="lbb" href="${imgURL(kind,name)}" download="${base(name)}"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12l7-7 7 7M5 21h14"/></svg>Download</a>`);
-  acts.push(`<button class="lbb dngr" data-a="del"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>Delete</button>`);
+  if(kind !== 'frame') acts.push(`<button class="lbb dngr" data-a="del"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>Delete</button>`);
   $('lbin').innerHTML = `
     <img class="lbimg" src="${imgURL(kind,name)}" alt="">
     <div class="lbcap">
