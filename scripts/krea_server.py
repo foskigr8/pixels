@@ -66,8 +66,37 @@ PATCH_FILE = Path(
 HOST = os.environ.get("KREA_HOST", "127.0.0.1")
 PORT = int(os.environ.get("KREA_PORT", "8711"))
 
+# Model identifiers, from a verified working run.
+#   krea2_turbo      = text-to-image only
+#   krea2_turbo_edit = adds the vision tower, i.e. reference images
 MODEL_TYPE = os.environ.get("KREA_MODEL_TYPE", "krea2_turbo_edit")
+BASE_MODEL_TYPE = os.environ.get("KREA_BASE_MODEL_TYPE", MODEL_TYPE)
 DEVICE = os.environ.get("KREA_DEVICE", "cuda:0")
+
+TRANSFORMER_FILE = os.environ.get(
+    "KREA_TRANSFORMER", "Krea2Turbo_quanto_bf16_int8.safetensors")
+TE_DIR = os.environ.get("KREA_TE_DIR", "Qwen3-VL-4B-Instruct")
+TE_FILE = os.environ.get(
+    "KREA_TE_FILE", "Qwen3-VL-4B-Instruct_quanto_bf16_int8.safetensors")
+
+# THE speed lever. 18 GB of weights do not fit in 16 GB of VRAM, so mmgp
+# streams them; how well it does that is what separates ~60 s from 20-46 s.
+#   pinnedMemory   - page-locked host memory, so transfers can be async at all
+#   asyncTransfers - overlap the next module's copy with the current compute
+#   budgets (MB)   - how much of each component to keep resident on the GPU
+#   sdpa           - the only attention backend that builds on SM75
+# These values come from a working run; do not "tidy" them without measuring.
+PROFILE_NO = int(os.environ.get("KREA_PROFILE_NO", "2"))
+ATTENTION = os.environ.get("KREA_ATTENTION", "sdpa")
+BUDGETS = {
+    "transformer": 13000,
+    "text_encoder": 4500,
+    "vae": 2000,
+    "*": 1000,
+}
+if MODEL_TYPE.endswith("_edit"):
+    # The vision tower is only resident on the _edit variants.
+    BUDGETS["vision_encoder"] = 2000
 
 # Refuse to start when a required patch no longer matches upstream. Set to 1
 # only once you have confirmed the post-load sweep is covering for it.
@@ -77,7 +106,8 @@ ALLOW_UNPATCHED = os.environ.get("KREA_ALLOW_UNPATCHED", "0") == "1"
 DEF_WIDTH = int(os.environ.get("KREA_WIDTH", "1024"))
 DEF_HEIGHT = int(os.environ.get("KREA_HEIGHT", "576"))
 DEF_STEPS = int(os.environ.get("KREA_STEPS", "8"))
-DEF_GUIDANCE = float(os.environ.get("KREA_GUIDANCE", "1.0"))
+# Turbo is distilled: CFG is disabled, not merely low.
+DEF_GUIDANCE = float(os.environ.get("KREA_GUIDANCE", "0.0"))
 
 MAX_PIXELS = int(os.environ.get("KREA_MAX_PIXELS", str(1536 * 1536)))
 MAX_REFS = 2  # Wan2GP enforces this too; failing here gives a better message.
@@ -212,23 +242,19 @@ def force_fp16_inplace(obj: Any) -> dict[str, int]:
 
 
 # ---------------------------------------------------------------------------
-# layer 3: dual-GPU split -- THE speed lever, not an optimisation to skip
+# layer 3: dual-GPU split -- EXPERIMENTAL, off by default
 # ---------------------------------------------------------------------------
 #
-# Measured baseline was 60 s/image. The compute floor on one T4 at 1024x576 /
-# 8 steps is ~18-22 s, so most of that 60 s was not compute -- it was mmgp
-# thrashing weights between GPU0 and CPU because mmgp is single-GPU and GPU1
-# sits completely idle.
+# Moving the text encoder and VAE to cuda:1 sounds like free speed, since mmgp
+# is single-GPU and GPU1 idles. It is off by default because mmgp already owns
+# device placement: it decides what is resident and when, per the budgets
+# above. Relocating modules behind its back fights that logic and can cost
+# more than it saves.
 #
-# Moving the text encoder and VAE to cuda:1 frees GPU0 for the transformer,
-# which is the only module that runs on every step. That is the documented
-# 60 s -> 35-45 s win; with 8 steps at 1024x576 it lands in the 20-46 s range.
-#
-# What does NOT help, and was already ruled out: DDP, device_map auto, and
-# PCIe tensor-parallel. Diffusion steps are sequential, so splitting a single
-# step across two T4s over PCIe is a net loss.
+# The measured path is the mmgp profile (pinned + async + budgets + sdpa).
+# Try this only after /stats shows a stable median, and compare directly.
 
-SPLIT_DEVICES = os.environ.get("KREA_SPLIT_DEVICES", "1") == "1"
+SPLIT_DEVICES = os.environ.get("KREA_SPLIT_DEVICES", "0") == "1"
 SECOND_DEVICE = os.environ.get("KREA_SECOND_DEVICE", "cuda:1")
 
 # Auxiliary towers: each runs once per image, so the PCIe hop costs far less
@@ -309,8 +335,8 @@ def split_devices(model: Any) -> dict[str, Any]:
 
 class Wan2GPAdapter:
     def __init__(self) -> None:
-        self.wgp = None
         self.model = None
+        self.pipe = None
         self.gen_fn = None
         self.gen_params: set[str] = set()
         self.accepts_kwargs = True
@@ -338,46 +364,52 @@ class Wan2GPAdapter:
     # -- probe --------------------------------------------------------------
 
     def probe(self) -> None:
-        """Dump the pinned checkout's API surface and patch status. No weights."""
-        wgp = self.import_wgp()
-        print(f"\nWan2GP at {WAN2GP_DIR}")
-        print(f"module file: {getattr(wgp, '__file__', '?')}\n")
+        """Dump the real API surface and patch status. No weights loaded."""
+        import inspect as _i
 
-        print("-- candidate callables in wgp --")
-        for n in sorted(dir(wgp)):
-            if n.startswith("_") or not callable(getattr(wgp, n, None)):
-                continue
-            if not any(k in n.lower() for k in ("model", "load", "generate", "config", "offload")):
-                continue
-            try:
-                sig = str(inspect.signature(getattr(wgp, n)))
-            except (TypeError, ValueError):
-                sig = "(?)"
-            print(f"  {n}{sig}")
+        if str(WAN2GP_DIR) not in sys.path:
+            sys.path.insert(0, str(WAN2GP_DIR))
+        os.chdir(WAN2GP_DIR)
 
-        krea = WAN2GP_DIR / "models" / "krea2" / "krea2_main.py"
-        print(f"\n-- models/krea2/krea2_main.py present: {krea.exists()} --")
-        if krea.exists():
-            for i, line in enumerate(krea.read_text().splitlines(), 1):
-                s = line.strip()
-                if s.startswith(("def ", "class ")) or "video_prompt_type" in s:
-                    print(f"  {i:5d}: {s[:140]}")
-
-        print("\n-- patch table dry run --")
+        print(f"\nWan2GP at {WAN2GP_DIR}\n")
+        print("-- patch table dry run --")
         for p in json.loads(PATCH_FILE.read_text())["patches"]:
-            t = WAN2GP_DIR / p["file"]
-            if not t.exists():
+            f = WAN2GP_DIR / p["file"]
+            if not f.exists():
                 state = "FILE MISSING"
             else:
-                body = t.read_text()
-                state = (
-                    "already applied"
-                    if p["replace"] in body
-                    else ("matches" if p["find"] in body else "!! NO MATCH")
-                )
-            print(f"  [{state:16}] {p['name']}  ({p['file']})")
+                body = f.read_text()
+                state = ("already applied" if p["replace"] in body
+                         else ("matches" if p["find"] in body else "!! NO MATCH"))
+            print(f"  [{state:16}] {p['name']}")
 
-    # -- load ---------------------------------------------------------------
+        print("\n-- weights on disk --")
+        for label, rel in (("transformer", os.path.join("models", TRANSFORMER_FILE)),
+                           ("text encoder", os.path.join("models", TE_DIR, TE_FILE)),
+                           ("vision tower", os.path.join(
+                               "models", TE_DIR, f"{TE_DIR}_vision_bf16.safetensors"))):
+            print(f"  {label:13} {'OK ' if os.path.exists(rel) else 'MISSING'}  {rel}")
+
+        print("\n-- handler API --")
+        try:
+            from models.krea2.krea2_handler import family_handler
+            for name in ("query_model_def", "load_model"):
+                fn = getattr(family_handler, name, None)
+                print(f"  family_handler.{name}{_i.signature(fn) if fn else ' MISSING'}")
+        except Exception as e:
+            print(f"  could not import handler: {type(e).__name__}: {e}")
+
+        print("\n-- generate signature (from source) --")
+        krea = WAN2GP_DIR / "models" / "krea2" / "krea2_main.py"
+        if krea.exists():
+            src = krea.read_text().splitlines()
+            for i, line in enumerate(src):
+                if line.strip().startswith("def generate"):
+                    for j in range(i, min(i + 30, len(src))):
+                        print(f"  {src[j].rstrip()}")
+                        if src[j].rstrip().endswith(":") and j > i:
+                            break
+                    break
 
     def load(self) -> None:
         import torch
@@ -385,80 +417,96 @@ class Wan2GPAdapter:
         t0 = time.time()
         patch_report = apply_source_patches()
 
-        log(f"[load] importing wgp from {WAN2GP_DIR}")
-        wgp = self.import_wgp()
+        if str(WAN2GP_DIR) not in sys.path:
+            sys.path.insert(0, str(WAN2GP_DIR))
+        os.chdir(WAN2GP_DIR)  # Wan2GP resolves its paths relative to its root
 
-        loader_name, loader = self._resolve(
-            wgp, ["load_models", "load_model", "get_model", "setup_model"]
+        from mmgp import offload
+        from shared.utils import files_locator as fl
+        from models.krea2.krea2_handler import family_handler
+
+        # Where Wan2GP looks for weights. Without this it re-downloads its own
+        # copies next to yours and fills the disk.
+        fl.set_checkpoints_paths(["models", "ckpts", "."])
+
+        transformer_path = os.path.join("models", TRANSFORMER_FILE)
+        te_path = os.path.join("models", TE_DIR, TE_FILE)
+        for label, path in (("transformer", transformer_path),
+                            ("text encoder", te_path)):
+            if not os.path.exists(path):
+                raise SystemExit(
+                    f"{label} not found at {WAN2GP_DIR}/{path}\n"
+                    "Re-run the weights cell in the notebook.")
+
+        # The _edit variants need the vision tower; without it the model loads
+        # fine and silently ignores every reference image you pass.
+        if MODEL_TYPE.endswith("_edit"):
+            vis = os.path.join("models", TE_DIR, f"{TE_DIR}_vision_bf16.safetensors")
+            if not os.path.exists(vis):
+                raise SystemExit(
+                    f"vision tower missing at {WAN2GP_DIR}/{vis}\n"
+                    f"{MODEL_TYPE} needs it for references. Re-run the weights cell, "
+                    "or set KREA_MODEL_TYPE=krea2_turbo for text-only.")
+
+        log(f"[load] model_type={MODEL_TYPE} base={BASE_MODEL_TYPE}")
+        model_def = family_handler.query_model_def(BASE_MODEL_TYPE, {})
+
+        self.model, self.pipe = family_handler.load_model(
+            model_filename=transformer_path,
+            model_type=MODEL_TYPE,
+            base_model_type=BASE_MODEL_TYPE,
+            model_def=model_def,
+            quantizeTransformer=False,   # weights are already quanto int8
+            dtype=torch.float16,         # T4: no bf16
+            VAE_dtype=torch.float16,
+            text_encoder_filename=te_path,
         )
-        if loader is None:
-            raise RuntimeError(
-                "no model loader found in wgp. Searched: load_models, load_model, "
-                "get_model, setup_model. Run --probe and update the candidate list "
-                "in Wan2GPAdapter.load()."
-            )
-        log(f"[load] loader = wgp.{loader_name}{inspect.signature(loader)}")
-        log(f"[load] model_type = {MODEL_TYPE}")
-        if not MODEL_TYPE.endswith("_edit"):
-            log("[load] !! WARNING: non-_edit model type. The vision tower is not")
-            log("[load] !! loaded, so reference images will be silently ignored.")
+        log(f"[load] loaded {type(self.model).__name__}")
 
-        result = loader(MODEL_TYPE)
-        # Loaders return either the model or a (model, offloadobj, ...) tuple.
-        self.model = result[0] if isinstance(result, tuple) else result
-        log(f"[load] model object: {type(self.model).__name__}")
-
-        gen_name, gen_fn = self._resolve(
-            self.model, ["generate", "__call__", "generate_image", "run"]
+        # The measured speed lever -- see BUDGETS at the top of this file.
+        log(f"[load] mmgp profile {PROFILE_NO}, budgets={BUDGETS}")
+        offload.profile(
+            self.pipe,
+            profile_no=PROFILE_NO,
+            quantizeTransformer=False,
+            convertWeightsFloatTo=torch.float16,
+            pinnedMemory=True,
+            asyncTransfers=True,
+            budgets=dict(BUDGETS),
         )
-        if gen_fn is None:
-            raise RuntimeError(
-                f"no generate entry point on {type(self.model).__name__}. "
-                "Run --probe and inspect models/krea2/krea2_main.py."
-            )
-        self.gen_fn = gen_fn
+        offload.shared_state["_attention"] = ATTENTION
+        log(f"[load] attention={ATTENTION}")
+
+        self.gen_fn = self.model.generate
         try:
-            sig = inspect.signature(gen_fn)
+            sig = inspect.signature(self.gen_fn)
             self.gen_params = set(sig.parameters)
             self.accepts_kwargs = any(
-                p.kind is inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
-            )
+                p.kind is inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
         except (TypeError, ValueError):
             self.gen_params, self.accepts_kwargs = set(), True
-        log(
-            f"[load] generate = {type(self.model).__name__}.{gen_name}, "
-            f"{len(self.gen_params)} params, **kwargs={self.accepts_kwargs}"
-        )
+        log(f"[load] generate params: {sorted(self.gen_params)}")
+        if MODEL_TYPE.endswith("_edit") and "input_ref_images" not in self.gen_params:
+            log("[load] !! generate() has no input_ref_images -- references will")
+            log("[load] !! be ignored. Check --probe output.")
 
-        log("[load] sweeping for surviving bf16 tensors...")
         sweep = force_fp16_inplace(self.model)
-        log(
-            f"[load] fp16 sweep: converted={sweep['converted']} "
-            f"failed={sweep['failed']} modules={sweep['modules']}"
-        )
+        log(f"[load] fp16 sweep: converted={sweep['converted']} "
+            f"failed={sweep['failed']} modules={sweep['modules']}")
         if sweep["converted"] > 64:
-            log("[load] !! large sweep count -- the source patches are probably not")
-            log("[load] !! matching. Load is correct but slower than it should be.")
+            log("[load] !! large sweep -- source patches likely not matching.")
 
         split = split_devices(self.model)
         if split["enabled"]:
-            log(f"[split] moved to {split['target']}: {split['moved'] or 'NOTHING'}")
-            if split["failed"]:
-                log(f"[split] failed: {split['failed']}")
-            if not split["moved"]:
-                log("[split] !! nothing matched AUX_PATTERNS -- you are running")
-                log("[split] !! single-GPU and will see ~60s/image instead of 20-46s.")
-                log("[split] !! Run --probe and add the real attribute names.")
-        else:
-            log(f"[split] disabled ({split['reason']}) -- expect ~60s/image")
+            log(f"[split] EXPERIMENTAL: moved {split['moved']} -> {split['target']}")
 
         torch.cuda.empty_cache()
         self.load_report = {
             "patches": patch_report,
             "fp16_sweep": sweep,
             "device_split": split,
-            "loader": loader_name,
-            "generate": gen_name,
+            "mmgp": {"profile": PROFILE_NO, "attention": ATTENTION, "budgets": BUDGETS},
+            "generate_params": sorted(self.gen_params),
             "load_s": round(time.time() - t0, 1),
         }
         log(f"[load] ready in {self.load_report['load_s']}s")
@@ -507,18 +555,26 @@ def to_pil(out: Any):
         return out
 
     if isinstance(out, torch.Tensor):
-        t = out.detach().float().cpu()
-        while t.ndim > 3:  # strip batch / frame dims
+        t = out.detach().cpu()
+        # Krea returns [C, 1, H, W] -- a frame axis after the channel axis, not
+        # a leading batch dim. Squeezing dim 0 would hand back a 1-channel
+        # image, so drop the frame axis specifically.
+        if t.ndim == 4 and t.shape[0] in (1, 3, 4) and t.shape[1] == 1:
+            t = t[:, 0]
+        was_uint8 = t.dtype == torch.uint8
+        t = t.float()
+        while t.ndim > 3:
             t = t[0]
         if t.ndim == 2:
             t = t.unsqueeze(0)
         if t.shape[0] in (1, 3, 4):  # CHW -> HWC
             t = t.permute(1, 2, 0)
         arr = t.numpy()
-        if arr.min() < -0.05:  # [-1,1] -> [0,1]
-            arr = (arr + 1.0) / 2.0
-        if arr.max() <= 1.05:
-            arr = arr * 255.0
+        if not was_uint8:
+            if arr.min() < -0.05:  # [-1,1] -> [0,1]
+                arr = (arr + 1.0) / 2.0
+            if arr.max() <= 1.05:
+                arr = arr * 255.0
         arr = np.clip(arr, 0, 255).astype("uint8")
         if arr.shape[-1] == 1:
             arr = arr[..., 0]
@@ -644,21 +700,20 @@ def generate(req: GenRequest):
         vpt += "I"
 
     kwargs = {
+        "seed": seed,
         "input_prompt": req.prompt,
-        "prompt": req.prompt,
-        "n_prompt": req.negative_prompt,
-        "negative_prompt": req.negative_prompt,
+        "n_prompt": req.negative_prompt if req.negative_prompt.strip() else None,
+        "sampling_steps": req.steps,
         "width": req.width,
         "height": req.height,
-        "sampling_steps": req.steps,
-        "num_inference_steps": req.steps,
         "guide_scale": req.guidance,
-        "guidance_scale": req.guidance,
-        "seed": seed,
-        "input_ref_images": refs,
-        "video_prompt_type": vpt,
         "batch_size": 1,
+        # Required by the handler even when unused; omitting it raises.
+        "loras_slists": {"phase1": []},
     }
+    if refs:
+        kwargs["input_ref_images"] = refs
+        kwargs["video_prompt_type"] = vpt
 
     with ADAPTER.lock:  # one at a time; 16 GB has no room for two
         t0 = time.time()

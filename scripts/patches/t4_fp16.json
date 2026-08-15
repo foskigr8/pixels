@@ -1,58 +1,54 @@
 {
   "_README": [
-    "fp16 patch table for running Krea 2 on a Kaggle T4 (Turing / SM75, no bf16).",
+    "fp16 patch table for Krea 2 on Kaggle T4 (Turing / SM75, no bf16).",
     "",
-    "IMPORTANT: the find/replace strings below are UNVERIFIED templates. They were",
-    "written from notes, not from a checkout, so treat them as starting points.",
-    "This is safe: krea_server.py's post-load force_fp16_inplace() sweep casts any",
-    "bf16 tensor these patches miss, so a NO MATCH costs load time, not correctness.",
+    "These strings are VERIFIED -- taken from a working notebook, not guessed.",
+    "krea2_main.py hardcodes bf16 and its three offload.load_model_data calls",
+    "pass no preprocess_sd, so weights arrive bf16 and die on Turing kernels.",
     "",
-    "To verify and lock them in:",
-    "  1. python scripts/krea_server.py --probe     # prints per-patch match status",
-    "  2. fix any '!! NO MATCH' find-strings against your checkout",
-    "  3. set \"required\": true and fill in verified_against with the SHA",
+    "Patch 1 comments out the dtype override. Patches 2-4 wrap each loader with",
+    "a preprocess_sd that casts every floating tensor to the active dtype.",
     "",
-    "Once required is true, the server refuses to boot on a NO MATCH, which is what",
-    "you want long-term: a silently no-op patch is the failure mode that wastes an",
-    "afternoon. Until then it warns and leans on the sweep."
+    "krea_server.py also runs a post-load sweep, so a NO MATCH costs load time,",
+    "not correctness. Verify with: python scripts/krea_server.py --probe"
   ],
-  "verified_against": null,
+  "verified_against": "working AIQUEST notebook, Wan2GP @ 7f06022",
   "patches": [
     {
-      "name": "text_encoder_dtype",
-      "file": "wgp.py",
-      "find": "torch.bfloat16",
-      "replace": "torch.float16",
-      "count": 1,
-      "required": false,
-      "note": "Text encoder load. Krea's T5/CLIP tower is the first thing to touch a kernel, so a bf16 miss here fails fast and loudly on T4."
-    },
-    {
-      "name": "transformer_dtype",
+      "name": "dtype_override",
       "file": "models/krea2/krea2_main.py",
       "find": "dtype = torch.bfloat16",
-      "replace": "dtype = torch.float16",
+      "replace": "# dtype = torch.bfloat16 # Patched for FP16 on T4",
       "count": 1,
-      "required": false,
-      "note": "Main DiT/transformer dtype. Biggest single win: this is most of the weight volume, so patching it avoids a large late cast."
+      "required": true,
+      "note": "The hardcoded bf16 override. Commenting it out lets the fp16 dtype passed into load_model win."
     },
     {
-      "name": "vae_dtype",
+      "name": "transformer_preprocess",
       "file": "models/krea2/krea2_main.py",
-      "find": "vae_dtype = torch.bfloat16",
-      "replace": "vae_dtype = torch.float16",
+      "find": "offload.load_model_data(transformer, model_filename, writable_tensors=False, preprocess_sd=preprocess_sd, default_dtype=dtype)",
+      "replace": "def tf_preprocess(sd):\n        sd = preprocess_sd(sd)\n        return {k: v.to(dtype) if (isinstance(v, torch.Tensor) and v.is_floating_point()) else v for k, v in sd.items()}\n    offload.load_model_data(transformer, model_filename, writable_tensors=False, preprocess_sd=tf_preprocess, default_dtype=dtype)",
       "count": 1,
-      "required": false,
-      "note": "VAE decode dtype. A bf16 VAE on T4 typically surfaces as a dtype-mismatch at decode, i.e. after you already paid for the diffusion steps."
+      "required": true,
+      "note": "Chains onto the existing preprocess_sd rather than replacing it -- that one does quanto unpacking and must still run first."
     },
     {
-      "name": "vision_tower_dtype",
-      "file": "models/krea2/krea2_handler.py",
-      "find": "torch.bfloat16",
-      "replace": "torch.float16",
+      "name": "text_encoder_preprocess",
+      "file": "models/krea2/krea2_main.py",
+      "find": "offload.load_model_data(text_encoder.language_model, text_encoder_filename, modelPrefix=\"language_model\", writable_tensors=False, default_dtype=dtype)",
+      "replace": "def te_preprocess(sd):\n        return {k: v.to(dtype) if (isinstance(v, torch.Tensor) and v.is_floating_point()) else v for k, v in sd.items()}\n    offload.load_model_data(text_encoder.language_model, text_encoder_filename, modelPrefix=\"language_model\", writable_tensors=False, preprocess_sd=te_preprocess, default_dtype=dtype)",
       "count": 1,
-      "required": false,
-      "note": "Vision encoder for reference images. This load path has no preprocess_sd hook, so it stays bf16 unless patched here or swept after load. Only matters for the _edit variants."
+      "required": true,
+      "note": "Qwen3-VL language model. No preprocess_sd upstream, so this adds one."
+    },
+    {
+      "name": "vae_preprocess",
+      "file": "models/krea2/krea2_main.py",
+      "find": "offload.load_model_data(vae, filename, writable_tensors=False, default_dtype=dtype)",
+      "replace": "def vae_preprocess(sd):\n        return {k: v.to(dtype) if (isinstance(v, torch.Tensor) and v.is_floating_point()) else v for k, v in sd.items()}\n    offload.load_model_data(vae, filename, writable_tensors=False, preprocess_sd=vae_preprocess, default_dtype=dtype)",
+      "count": 1,
+      "required": true,
+      "note": "A bf16 VAE fails at decode -- after you already paid for every diffusion step."
     }
   ]
 }
