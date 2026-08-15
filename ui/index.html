@@ -139,6 +139,9 @@ svg{display:block}
   backdrop-filter:blur(6px);opacity:0;transition:.15s}
 .card:hover .dots{opacity:1}
 .dots svg{width:15px;height:15px;fill:currentColor}
+.card .secs{position:absolute;left:0;right:0;bottom:0;padding:7px 10px;font-size:11px;
+  font-weight:600;color:#fff;font-variant-numeric:tabular-nums;letter-spacing:.01em;
+  background:linear-gradient(transparent,rgba(0,0,0,.82));pointer-events:none}
 .card .tag{position:absolute;left:11px;right:11px;bottom:10px;font-size:11px;font-weight:550;
   color:#fff;opacity:0;transition:.15s;text-shadow:0 1px 8px rgba(0,0,0,.95);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -643,7 +646,8 @@ function render(working, error){
     return `<div class="card" data-k="${k}" data-n="${s.name}" data-p="${encodeURIComponent(s.prompt||'')}" draggable="true">
        <img loading="lazy" src="${imgURL(k,s.name)}" alt="">
        <button class="dots" data-act="menu" title="More"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
-       <span class="tag">${s.prompt || s.name}</span></div>`;
+       <span class="tag">${s.prompt || s.name}</span>
+       ${s.secs!=null?`<span class="secs">Generated in ${s.secs}s</span>`:''}</div>`;
   });
   if(mode === 'refs') cells.unshift(addTile);
   if(working) cells.unshift(`<div class="working"><div class="muted"><div class="spin"></div><span id="el">0.0s</span></div></div>`);

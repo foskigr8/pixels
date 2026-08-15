@@ -80,7 +80,9 @@ STYLE = ("minimal hand-drawn stickman on a pure white background, thick 6px soli
          "no shadows, whiteboard explainer illustration")
 NEGATIVE = ("photorealistic, 3d render, gradient, drop shadow, soft shading, "
             "textured paper, grey background, watermark, blurry")
+# Optional, opt-in only. Nothing here is applied unless explicitly selected.
 PRESETS = {
+    "House style": STYLE,
     "Hook": "a relatable everyday situation, one or two literal props, lots of white space",
     "Cross-section": "anatomical or mechanical cross-section, interior revealed as cartoon machinery with gears",
     "Data / HUD": "a semicircular gauge with a needle, simple bar readout, hand-lettered uppercase label",
@@ -326,6 +328,7 @@ class Req(BaseModel):
     prompt: str
     project: str = "untitled"
     preset: str | None = None
+    negative: str = ""
     width: int = 1024
     height: int = 576
     steps: int = 8
@@ -475,7 +478,7 @@ def upload(u: Upload):
 
 
 @app.get("/api/img")
-def img(project: str, name: str, kind: str = "shot"):
+def img(name: str, kind: str = "shot", project: str = "untitled"):
     if kind == "frame":
         cand = (FRAMES / name).resolve()
         if FRAMES.resolve() in cand.parents and cand.is_file():
@@ -488,7 +491,7 @@ def img(project: str, name: str, kind: str = "shot"):
 
 
 @app.delete("/api/img")
-def delete(project: str, name: str, kind: str = "shot"):
+def delete(name: str, kind: str = "shot", project: str = "untitled"):
     d = (pdirs(project)[0] if kind == "shot" else pdirs(project)[1]) / Path(name).name
     if d.is_file():
         d.unlink()
@@ -507,11 +510,12 @@ def generate(r: Req):
         raise HTTPException(400, "width and height must be divisible by 16")
 
     shots_dir, refs_dir = pdirs(r.project)
-    parts = [STYLE]
+    # Send the prompt as written. Nothing is prepended, ever -- a house style
+    # baked in here silently overrides what you asked for ("a Ferrari" came
+    # back as a stickman). A preset is appended ONLY when you pick one.
+    prompt = r.prompt.strip()
     if r.preset and r.preset in PRESETS:
-        parts.append(PRESETS[r.preset])
-    parts.append(r.prompt.strip())
-    prompt = ". ".join(parts)
+        prompt = f"{prompt}. {PRESETS[r.preset]}"
     seed = r.seed if r.seed >= 0 else int(time.time() * 1000) % (2**31)
 
     # Wan2GP accepts at most 2 reference images; more are dropped upstream
@@ -524,7 +528,7 @@ def generate(r: Req):
         if p.is_file():
             imgs.append(Image.open(p).convert("RGB"))
 
-    kw = dict(seed=seed, input_prompt=prompt, n_prompt=NEGATIVE, sampling_steps=r.steps,
+    kw = dict(seed=seed, input_prompt=prompt, n_prompt=(r.negative or None), sampling_steps=r.steps,
               width=r.width, height=r.height, guide_scale=0.0, batch_size=1,
               loras_slists={"phase1": []})
     if imgs:
