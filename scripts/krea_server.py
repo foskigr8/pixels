@@ -734,7 +734,24 @@ def main() -> None:
         ADAPTER.probe()
         return
 
+    import socket
     import uvicorn
+
+    # Claim the port BEFORE starting the load. uvicorn only binds after the
+    # background load is already running, so without this a second process
+    # loads a whole model onto the GPU and only then discovers it lost the
+    # race -- which is how three copies end up competing for 16 GB.
+    probe = socket.socket()
+    probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        probe.bind((HOST, PORT))
+    except OSError:
+        raise SystemExit(
+            f"port {PORT} is already in use -- another krea_server is running.\n"
+            f"Use it, or stop it first:  pkill -9 -f krea_server.py"
+        )
+    finally:
+        probe.close()
 
     log(f"[boot] REPO_DIR={REPO_DIR}")
     log(f"[boot] WAN2GP_DIR={WAN2GP_DIR}")
