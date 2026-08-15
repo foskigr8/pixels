@@ -272,6 +272,7 @@ def pdirs(project: str) -> tuple[Path, Path]:
 class Req(BaseModel):
     prompt: str
     project: str = "untitled"
+    preset: str | None = None
     width: int = 1024
     height: int = 576
     steps: int = 8
@@ -292,6 +293,11 @@ class Upload(BaseModel):
 @app.get("/", response_class=HTMLResponse)
 def index():
     return (UI / "index.html").read_text()
+
+
+@app.get("/api/config")
+def config():
+    return {"presets": PRESETS, "style": STYLE}
 
 
 @app.get("/api/health")
@@ -408,7 +414,11 @@ def generate(r: Req):
         raise HTTPException(400, "width and height must be divisible by 16")
 
     shots_dir, refs_dir = pdirs(r.project)
-    prompt = f"{STYLE}. {r.prompt.strip()}"
+    parts = [STYLE]
+    if r.preset and r.preset in PRESETS:
+        parts.append(PRESETS[r.preset])
+    parts.append(r.prompt.strip())
+    prompt = ". ".join(parts)
     seed = r.seed if r.seed >= 0 else int(time.time() * 1000) % (2**31)
 
     # Wan2GP accepts at most 2 reference images; more are dropped upstream

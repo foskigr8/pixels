@@ -118,6 +118,49 @@ body{background:var(--bg);color:var(--tx);overflow:hidden;
 .hint{text-align:center;font-size:11px;color:var(--dm2);margin-top:9px;min-height:14px;
   font-variant-numeric:tabular-nums}
 
+
+/* attachments live inside the composer, Flow-style */
+.attach{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 7px 2px}
+.att{position:relative;width:56px;height:56px;border-radius:9px;overflow:hidden;
+  border:1px solid var(--ln2);background:var(--s2);flex:none}
+.att img{width:100%;height:100%;object-fit:cover;display:block}
+.att button{position:absolute;top:2px;right:2px;width:16px;height:16px;border:0;border-radius:50%;
+  background:rgba(0,0,0,.75);color:#fff;font-size:11px;line-height:1;cursor:pointer;display:grid;place-items:center}
+.att button:hover{background:var(--bad)}
+.att.up{display:grid;place-items:center;color:var(--dm2);font-size:10px}
+.chipstyle{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:99px;
+  background:rgba(109,109,240,.16);border:1px solid var(--ac);color:var(--ac2);font-size:11.5px;font-weight:600}
+.chipstyle button{border:0;background:0;color:inherit;cursor:pointer;font-size:13px;line-height:1;padding:0}
+
+/* view modes */
+.grid.rows{grid-template-columns:1fr}
+.grid.rows .card,.grid.rows .card:first-child{grid-column:auto;grid-row:auto;aspect-ratio:16/9}
+.grid.list{grid-template-columns:1fr;gap:6px}
+.grid.list .card,.grid.list .card:first-child{grid-column:auto;grid-row:auto;aspect-ratio:auto;
+  display:grid;grid-template-columns:104px 1fr;align-items:center;gap:13px;padding:7px;cursor:pointer}
+.grid.list .card img{height:58px;border-radius:7px}
+.grid.list .tag{position:static;opacity:1;text-shadow:none;color:var(--dm);white-space:normal;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.vt{display:flex;gap:2px;background:var(--s1);border:1px solid var(--ln);border-radius:9px;padding:2px}
+.vt button{width:28px;height:24px;border:0;border-radius:6px;background:0;color:var(--dm2);
+  cursor:pointer;display:grid;place-items:center}
+.vt button.on{background:var(--s2);color:var(--tx)}
+.vt svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.8}
+
+/* lightbox: large, with a caption */
+.lb{display:none;place-items:center;position:fixed;inset:0;z-index:50;padding:28px 28px 20px;
+  background:rgba(5,5,8,.96);backdrop-filter:blur(10px);cursor:zoom-out}
+.lb.open{display:grid}
+.lbin{display:flex;flex-direction:column;gap:12px;max-height:100%;max-width:100%;align-items:center;cursor:default}
+.lb img{max-width:min(1500px,94vw);max-height:80vh;border-radius:12px;display:block;
+  box-shadow:0 30px 90px rgba(0,0,0,.7)}
+.lbcap{display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:center;
+  font-size:12.5px;color:var(--dm);font-variant-numeric:tabular-nums}
+.lbcap b{color:var(--tx);font-size:14px;font-weight:600}
+.lbcap .pr{color:var(--dm);max-width:760px;text-align:center}
+.lbcap a{color:var(--ac2);text-decoration:none;border:1px solid var(--ln2);padding:5px 11px;border-radius:8px}
+.lbcap a:hover{background:var(--s2)}
+
 /* ---------- overlays ---------- */
 .drop{position:absolute;inset:0;z-index:40;display:none;place-items:center;
   background:rgba(8,8,11,.86);backdrop-filter:blur(6px);border:2px dashed var(--ac2);border-radius:14px;margin:10px}
@@ -157,16 +200,26 @@ body{background:var(--bg);color:var(--tx);overflow:hidden;
   <main class="main" id="main">
     <div class="top">
       <h2 id="pname">untitled</h2>
-      <div class="refrail" id="rail"></div>
-      <button class="addref" id="addref" title="Add reference images">
-        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <div style="flex:1"></div>
+      <div class="vt" id="vt">
+        <button data-v="grid" class="on" title="Grid"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg></button>
+        <button data-v="rows" title="Rows"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/></svg></button>
+        <button data-v="list" title="List"><svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+      </div>
       <input type="file" id="file" accept="image/*" multiple hidden>
     </div>
 
     <div class="feed" id="feed"><div class="feedin" id="feedin"></div></div>
 
     <div class="dock"><div class="dockin">
+      <div class="attach" id="attach"></div>
       <div class="bar">
+        <button class="ib" id="clip" title="Add reference images">
+          <svg viewBox="0 0 24 24"><path d="M21 11.5 12.5 20a5 5 0 0 1-7-7l8.5-8.5a3.5 3.5 0 1 1 5 5L10.5 18a2 2 0 0 1-3-3l8-8"/></svg>
+        </button>
+        <button class="ib" id="stylebtn" title="Preset style">
+          <svg viewBox="0 0 24 24"><path d="m12 3 2.4 6.2L21 11l-6.6 1.8L12 19l-2.4-6.2L3 11l6.6-1.8z"/></svg>
+        </button>
         <textarea id="p" rows="1" placeholder="a stickman sweating beside a desk fan, blue airflow, red heat lines…"></textarea>
         <div class="opt"><select id="ratio">
           <option value="1024x576">16:9</option><option value="576x1024">9:16</option>
@@ -184,17 +237,20 @@ body{background:var(--bg);color:var(--tx);overflow:hidden;
 </div>
 
 <div class="menu" id="menu"></div>
-<div class="lb" id="lb"></div>
+<div class="lb" id="lb"><div class="lbin" id="lbin"></div></div>
 
 <script>
 const $ = i => document.getElementById(i);
 const api = (p,o) => fetch('/api'+p,o).then(r => r.ok ? r.json()
   : r.json().then(e => Promise.reject(e.detail||r.statusText), () => Promise.reject(r.statusText)));
 const jpost = (p,b) => api(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+const imgURL = (kind,name) => `/api/img?kind=${kind}&project=${encodeURIComponent(project)}&name=${encodeURIComponent(name)}`;
 
 let project = localStorage.getItem('studio.project') || 'untitled';
-let picked = [];        // selected reference filenames, in click order
+let attached = [];                  // reference filenames attached to the composer
+let stylePreset = null, presets = {};
 let shots = [], busy = false;
+let view = localStorage.getItem('studio.view') || 'grid';
 
 /* ---------- status ---------- */
 async function poll(){
@@ -215,166 +271,184 @@ async function loadProjects(){
   const {projects} = await api('/projects');
   if(!projects.some(p => p.name === project)) project = projects[0].name;
   $('plist').innerHTML = projects.map(p =>
-    `<div class="pj${p.name===project?' on':''}" data-n="${p.name}">
-       <span>${p.name}</span><b>${p.shots}</b></div>`).join('');
+    `<div class="pj${p.name===project?' on':''}" data-n="${p.name}"><span>${p.name}</span></div>`).join('');
   $('pname').textContent = project;
   localStorage.setItem('studio.project', project);
 }
-$('plist').onclick = e => {
-  const el = e.target.closest('.pj'); if(!el) return;
-  project = el.dataset.n; picked = [];
-  loadProjects(); loadRefs(); loadShots();
-};
+async function switchTo(name){
+  project = name; attached = []; stylePreset = null; shots = [];
+  $('p').value = ''; $('hint').textContent = '';
+  await loadProjects(); paintAttach(); await loadShots();
+}
+$('plist').onclick = e => { const el = e.target.closest('.pj'); if(el) switchTo(el.dataset.n); };
 $('newp').onclick = async () => {
-  const name = prompt('Project name'); if(!name) return;
-  const r = await jpost('/projects',{name});
-  project = r.name; picked = [];
-  await loadProjects(); loadRefs(); loadShots();
+  const name = prompt('Project name');
+  if(name === null) return;
+  const r = await jpost('/projects', {name: name.trim() || 'untitled'});
+  await switchTo(r.name);
 };
 
-/* ---------- references ---------- */
-async function loadRefs(){
-  const {refs} = await api('/refs?project=' + encodeURIComponent(project));
-  $('rail').innerHTML = refs.length
-    ? refs.map(n => {
-        const i = picked.indexOf(n);
-        return `<div class="rf${i>-1?' on':''}" data-n="${n}" title="${n}">
-          <img src="/api/img?kind=ref&project=${encodeURIComponent(project)}&name=${encodeURIComponent(n)}" alt="">
-          <span class="n">${i+1}</span></div>`;
-      }).join('')
-    : '<span class="emptyref">No references yet — drag images anywhere, or use +</span>';
+/* ---------- attachments (the reference mechanism) ---------- */
+function paintAttach(){
+  $('attach').innerHTML =
+    attached.map(n => `<div class="att"><img src="${imgURL('ref',n)}" alt="" data-n="${n}">
+        <button data-x="${n}" title="Remove">&times;</button></div>`).join('')
+    + (stylePreset ? `<span class="chipstyle">${stylePreset}<button id="rmstyle">&times;</button></span>` : '');
 }
-$('rail').onclick = e => {
-  const el = e.target.closest('.rf'); if(!el) return;
-  const n = el.dataset.n, i = picked.indexOf(n);
-  if(i > -1) picked.splice(i,1); else picked.push(n);
-  loadRefs(); updateHint();
+$('attach').onclick = e => {
+  const x = e.target.closest('[data-x]');
+  if(x){ attached = attached.filter(n => n !== x.dataset.x); return paintAttach(); }
+  if(e.target.id === 'rmstyle'){ stylePreset = null; return paintAttach(); }
+  const im = e.target.closest('img');
+  if(im) openLightbox('ref', im.dataset.n, '');
 };
 
-function updateHint(){
-  if(!picked.length) return $('hint').textContent = '';
-  const extra = picked.length > 2 ? ` — only the first 2 are sent (model limit)` : '';
-  $('hint').textContent = `${picked.length} reference${picked.length>1?'s':''} selected${extra}`;
-}
-
-/* upload: shared by drag-drop and the file picker */
-async function upload(files){
+async function attach(files){
   const list = [...files].filter(f => f.type.startsWith('image/'));
   if(!list.length) return;
-  $('hint').textContent = `uploading ${list.length}…`;
+  $('hint').textContent = `adding ${list.length} reference${list.length>1?'s':''}…`;
   for(const f of list){
-    const data = await new Promise(res => { const r = new FileReader();
-      r.onload = () => res(r.result); r.readAsDataURL(f); });
-    try{ await jpost('/upload',{project, name:f.name, data}); }
-    catch(e){ $('hint').textContent = String(e); }
+    try{
+      const data = await new Promise(r => { const fr = new FileReader();
+        fr.onload = () => r(fr.result); fr.readAsDataURL(f); });
+      const {name} = await jpost('/upload', {project, name: f.name, data});
+      attached.push(name);
+    }catch(err){ $('hint').textContent = String(err); paintAttach(); return; }
   }
-  $('hint').textContent = '';
-  loadRefs(); loadProjects();
+  $('hint').textContent = attached.length > 2
+    ? `${attached.length} references — the model uses the first 2` : '';
+  paintAttach();
 }
-$('addref').onclick = () => $('file').click();
-$('file').onchange = e => { upload(e.target.files); e.target.value=''; };
+$('clip').onclick = () => $('file').click();
+$('file').onchange = e => { attach(e.target.files); e.target.value = ''; };
+window.addEventListener('paste', e => { if(e.clipboardData?.files?.length) attach(e.clipboardData.files); });
 
-let dragDepth = 0;
+/* drag anywhere over the canvas */
+let depth = 0;
 const main = $('main');
-main.addEventListener('dragenter', e => { e.preventDefault(); if(++dragDepth===1) $('drop').classList.add('on'); });
-main.addEventListener('dragover',  e => e.preventDefault());
-main.addEventListener('dragleave', e => { if(--dragDepth<=0){ dragDepth=0; $('drop').classList.remove('on'); }});
+['dragenter','dragover'].forEach(ev => main.addEventListener(ev, e => {
+  e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
+  if(ev === 'dragenter' && ++depth === 1) $('drop').classList.add('on');
+}));
+main.addEventListener('dragleave', () => { if(--depth <= 0){ depth = 0; $('drop').classList.remove('on'); } });
 main.addEventListener('drop', e => {
-  e.preventDefault(); dragDepth=0; $('drop').classList.remove('on');
-  if(e.dataTransfer.files.length) upload(e.dataTransfer.files);
+  e.preventDefault(); depth = 0; $('drop').classList.remove('on');
+  if(e.dataTransfer.files?.length) attach(e.dataTransfer.files);
 });
 
-/* ---------- feed ---------- */
-async function loadShots(){ shots = (await api('/shots?project='+encodeURIComponent(project))).shots; render(); }
+/* ---------- preset styles ---------- */
+$('stylebtn').onclick = e => {
+  e.stopPropagation();
+  openMenu(e.clientX, e.clientY, Object.keys(presets).map(k => ({a:'style:'+k, t:k})));
+};
 
+/* ---------- feed ---------- */
+async function loadShots(){
+  shots = (await api('/shots?project='+encodeURIComponent(project))).shots;
+  render();
+}
 function render(working, error){
   const f = $('feedin');
   if(!shots.length && !working && !error){
     f.innerHTML = `<div class="blank"><h2>Every shot, <b>one style.</b></h2>
-      <p>Describe a beat below. Drag images in to steer the look.</p></div>`;
+      <p>Describe a beat below. Drop images in to steer the look.</p></div>`;
     return;
   }
   const cells = shots.map(s =>
     `<div class="card" data-n="${s.name}" data-p="${encodeURIComponent(s.prompt||'')}">
-      <img loading="lazy" src="/api/img?kind=shot&project=${encodeURIComponent(project)}&name=${encodeURIComponent(s.name)}" alt="">
-      <span class="tag">${s.prompt ? s.prompt : s.name}</span></div>`);
+       <img loading="lazy" src="${imgURL('shot',s.name)}" alt="">
+       <span class="tag">${s.prompt || s.name}</span></div>`);
   if(working) cells.unshift(`<div class="working"><div class="muted"><div class="spin"></div><span id="el">0.0s</span></div></div>`);
-  f.innerHTML = (error?`<div class="err">${error}</div>`:'') + `<div class="grid">${cells.join('')}</div>`;
+  f.innerHTML = (error?`<div class="err">${error}</div>`:'') + `<div class="grid ${view}">${cells.join('')}</div>`;
 }
+$('vt').onclick = e => {
+  const b = e.target.closest('button'); if(!b) return;
+  view = b.dataset.v; localStorage.setItem('studio.view', view);
+  [...$('vt').children].forEach(x => x.classList.toggle('on', x.dataset.v === view));
+  render();
+};
 $('feedin').onclick = e => {
   const c = e.target.closest('.card'); if(!c) return;
-  $('lb').innerHTML = `<img src="/api/img?kind=shot&project=${encodeURIComponent(project)}&name=${encodeURIComponent(c.dataset.n)}" alt="">`;
-  $('lb').classList.add('open');
+  openLightbox('shot', c.dataset.n, decodeURIComponent(c.dataset.p||''));
 };
-$('lb').onclick = () => $('lb').classList.remove('open');
 
-/* ---------- right-click menu ---------- */
+/* ---------- lightbox ---------- */
+function openLightbox(kind, name, promptText){
+  const s = shots.find(x => x.name === name) || {};
+  $('lbin').innerHTML = `<img src="${imgURL(kind,name)}" alt="">
+    <div class="lbcap"><b>${name}</b>
+      ${s.seed!=null?`<span>seed ${s.seed}</span>`:''}
+      ${s.secs!=null?`<span>${s.secs}s</span>`:''}
+      <a href="${imgURL(kind,name)}" download="${name}">Download</a>
+      ${promptText?`<div class="pr" style="flex-basis:100%">${promptText}</div>`:''}
+    </div>`;
+  $('lb').classList.add('open');
+}
+$('lb').onclick = e => { if(!e.target.closest('.lbin') || e.target.tagName === 'IMG') $('lb').classList.remove('open'); };
+$('lbin').onclick = e => { if(e.target.tagName === 'A') e.stopPropagation(); };
+
+/* ---------- right-click ---------- */
 const menu = $('menu');
 function openMenu(x, y, items){
   menu.innerHTML = items.map(i => i.sep ? '<div class="msep"></div>'
     : `<div class="mi${i.dngr?' dngr':''}" data-a="${i.a}">${i.t}${i.k?`<span>${i.k}</span>`:''}</div>`).join('');
-  menu.style.left = Math.min(x, innerWidth-200) + 'px';
-  menu.style.top  = Math.min(y, innerHeight-190) + 'px';
+  menu.style.left = Math.min(x, innerWidth-210)+'px';
+  menu.style.top  = Math.min(y, innerHeight-230)+'px';
   menu.classList.add('on');
 }
 document.addEventListener('click', () => menu.classList.remove('on'));
-document.addEventListener('keydown', e => {
-  if(e.key === 'Escape'){ menu.classList.remove('on'); $('lb').classList.remove('open'); $('drop').classList.remove('on'); }
-});
+document.addEventListener('keydown', e => { if(e.key==='Escape'){
+  menu.classList.remove('on'); $('lb').classList.remove('open'); $('drop').classList.remove('on'); }});
 
 document.addEventListener('contextmenu', e => {
-  const card = e.target.closest('.card'), rf = e.target.closest('.rf');
-  if(!card && !rf) return;
+  const card = e.target.closest('.card'), att = e.target.closest('.att');
+  if(!card && !att) return;
   e.preventDefault();
   if(card){
     menu.dataset.kind='shot'; menu.dataset.n=card.dataset.n; menu.dataset.p=card.dataset.p;
     openMenu(e.clientX, e.clientY, [
-      {a:'addprompt', t:'Add prompt to composer'},
-      {a:'useref',    t:'Use as reference'},
-      {a:'copy',      t:'Copy prompt'},
+      {a:'useref', t:'Use as reference'},
+      {a:'reuse',  t:'Reuse prompt'},
       {sep:1},
-      {a:'open',      t:'Open full size'},
-      {a:'del',       t:'Delete shot', dngr:1},
+      {a:'download', t:'Download'},
+      {a:'open',     t:'Open'},
+      {a:'del',      t:'Delete', dngr:1},
     ]);
   }else{
-    menu.dataset.kind='ref'; menu.dataset.n=rf.dataset.n; menu.dataset.p='';
+    menu.dataset.kind='ref'; menu.dataset.n=att.querySelector('img').dataset.n; menu.dataset.p='';
     openMenu(e.clientX, e.clientY, [
-      {a:'toggle', t: picked.includes(rf.dataset.n) ? 'Deselect' : 'Select as reference'},
-      {a:'only',   t:'Use only this'},
-      {sep:1},
-      {a:'del',    t:'Remove reference', dngr:1},
+      {a:'open', t:'Open'}, {a:'download', t:'Download'},
+      {sep:1}, {a:'detach', t:'Remove', dngr:1},
     ]);
   }
 });
 
 menu.onclick = async e => {
   const mi = e.target.closest('.mi'); if(!mi) return;
-  const {a} = mi.dataset, kind = menu.dataset.kind, n = menu.dataset.n;
-  const promptText = decodeURIComponent(menu.dataset.p || '');
-  if(a==='addprompt' && promptText){
-    const ta=$('p'); ta.value = ta.value.trim() ? ta.value.trim()+' '+promptText : promptText;
-    ta.focus(); ta.dispatchEvent(new Event('input'));
-  }
-  if(a==='copy' && promptText) navigator.clipboard?.writeText(promptText);
-  if(a==='open'){
-    $('lb').innerHTML = `<img src="/api/img?kind=${kind}&project=${encodeURIComponent(project)}&name=${encodeURIComponent(n)}" alt="">`;
-    $('lb').classList.add('open');
-  }
-  if(a==='useref'){
-    // copy the generated shot into this project's references
-    const b = await fetch(`/api/img?kind=shot&project=${encodeURIComponent(project)}&name=${encodeURIComponent(n)}`).then(r=>r.blob());
-    const data = await new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result);r.readAsDataURL(b);});
-    await jpost('/upload',{project, name:n, data});
-    loadRefs();
-  }
-  if(a==='toggle'){ const i=picked.indexOf(n); i>-1?picked.splice(i,1):picked.push(n); loadRefs(); updateHint(); }
-  if(a==='only'){ picked=[n]; loadRefs(); updateHint(); }
-  if(a==='del'){
-    await fetch(`/api/img?kind=${kind}&project=${encodeURIComponent(project)}&name=${encodeURIComponent(n)}`,{method:'DELETE'});
-    picked = picked.filter(x=>x!==n);
-    loadRefs(); loadShots(); loadProjects(); updateHint();
-  }
+  const a = mi.dataset.a, kind = menu.dataset.kind, n = menu.dataset.n;
+  const pr = decodeURIComponent(menu.dataset.p||'');
   menu.classList.remove('on');
+
+  if(a.startsWith('style:')){ stylePreset = a.slice(6); return paintAttach(); }
+  if(a === 'reuse'){ const ta=$('p'); ta.value = pr; ta.focus(); ta.dispatchEvent(new Event('input')); return; }
+  if(a === 'open'){ return openLightbox(kind, n, pr); }
+  if(a === 'download'){
+    const link = document.createElement('a');
+    link.href = imgURL(kind,n); link.download = n; link.click(); return;
+  }
+  if(a === 'detach'){ attached = attached.filter(x => x !== n); return paintAttach(); }
+  if(a === 'useref'){
+    // attach the actual image, not its text
+    const blob = await fetch(imgURL('shot',n)).then(r => r.blob());
+    const data = await new Promise(r => { const fr=new FileReader(); fr.onload=()=>r(fr.result); fr.readAsDataURL(blob); });
+    const up = await jpost('/upload', {project, name:n, data});
+    attached.push(up.name); return paintAttach();
+  }
+  if(a === 'del'){
+    await fetch(imgURL(kind,n), {method:'DELETE'});
+    attached = attached.filter(x => x !== n);
+    paintAttach(); loadShots(); loadProjects();
+  }
 };
 
 /* ---------- generate ---------- */
@@ -389,18 +463,23 @@ $('go').onclick = async () => {
   const t0 = Date.now();
   const tick = setInterval(()=>{ const el=$('el'); if(el) el.textContent=((Date.now()-t0)/1000).toFixed(1)+'s'; },100);
   try{
-    const r = await jpost('/generate',{prompt:txt, project, width:w, height:h,
-      steps:+$('steps').value, seed:-1, ref_paths:picked});
+    const r = await jpost('/generate',{prompt:txt, project, preset:stylePreset, width:w, height:h,
+      steps:+$('steps').value, seed:-1, ref_paths:attached});
     $('hint').textContent = `${r.generate_s}s · seed ${r.seed}`
-      + (r.refs_dropped ? ` · ${r.refs_dropped} extra reference ignored (model takes 2)` : '');
+      + (r.refs_dropped ? ` · ${r.refs_dropped} reference ignored (model takes 2)` : '');
     ta.value=''; ta.style.height='auto';
-    await loadShots(); await loadProjects();
+    await loadShots();
     $('feed').scrollTo({top:0,behavior:'smooth'});
   }catch(e){ render(false, typeof e==='string'?e:JSON.stringify(e)); $('hint').textContent=''; }
   finally{ clearInterval(tick); busy=false; $('go').disabled=false; }
 };
 
-(async () => { await loadProjects(); loadRefs(); loadShots(); })();
+/* ---------- boot ---------- */
+(async () => {
+  try{ presets = (await api('/config')).presets || {}; }catch{}
+  [...$('vt').children].forEach(x => x.classList.toggle('on', x.dataset.v === view));
+  await loadProjects(); paintAttach(); await loadShots();
+})();
 poll(); setInterval(poll, 5000);
 </script>
 </body>
