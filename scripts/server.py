@@ -41,6 +41,7 @@ REPO = Path(os.environ.get("STUDIO_DIR", Path(__file__).resolve().parent.parent)
 WAN2GP = Path(os.environ.get("WAN2GP_DIR", "/kaggle/working/Wan2GP"))
 SHOTS = Path(os.environ.get("SHOTS_DIR", REPO / "shots"))
 REFS = REPO / "refs"
+FRAMES = REPO / "frames"
 UI = REPO / "ui"
 PATCHES = Path(__file__).resolve().parent / "patches" / "t4_fp16.json"
 
@@ -284,6 +285,11 @@ class NewProject(BaseModel):
     name: str
 
 
+class Rename(BaseModel):
+    project: str
+    name: str
+
+
 class Upload(BaseModel):
     project: str
     name: str
@@ -337,6 +343,37 @@ def new_project(p: NewProject):
     return {"name": name}
 
 
+@app.post("/api/rename")
+def rename_project(r: Rename):
+    old, new = slug(r.project), slug(r.name)
+    if not new:
+        raise HTTPException(400, "name required")
+    if new == old:
+        return {"name": new}
+    # keep the target free instead of overwriting
+    i = 2
+    while (SHOTS / new).exists() or (REFS / new).exists():
+        new = f"{slug(r.name)} {i}"
+        i += 1
+    for src, dst in ((SHOTS / old, SHOTS / new), (REFS / old, REFS / new)):
+        if src.exists():
+            src.rename(dst)
+    return {"name": new}
+
+
+@app.get("/api/frames")
+def frames():
+    """The committed style-reference corpus in frames/, grouped by video."""
+    if not FRAMES.exists():
+        return {"videos": []}
+    out = []
+    for d in sorted(p for p in FRAMES.iterdir() if p.is_dir()):
+        imgs = sorted(p.name for p in d.iterdir() if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"))
+        if imgs:
+            out.append({"video": d.name, "frames": imgs})
+    return {"videos": out}
+
+
 @app.get("/api/shots")
 def shots(project: str = "untitled"):
     d, _ = pdirs(project)
@@ -388,6 +425,11 @@ def upload(u: Upload):
 
 @app.get("/api/img")
 def img(project: str, name: str, kind: str = "shot"):
+    if kind == "frame":
+        cand = (FRAMES / name).resolve()
+        if FRAMES.resolve() in cand.parents and cand.is_file():
+            return FileResponse(cand)
+        raise HTTPException(404, "not found")
     d = (pdirs(project)[0] if kind == "shot" else pdirs(project)[1]) / Path(name).name
     if not d.is_file():
         raise HTTPException(404, "not found")
