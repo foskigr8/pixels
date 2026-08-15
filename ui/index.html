@@ -29,16 +29,6 @@ body{background:var(--bg);color:var(--tx);overflow:hidden;
   font-weight:500;cursor:pointer;transition:.14s}
 .newbtn:hover{background:rgba(109,109,240,.16);border-color:var(--ac)}
 .newbtn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
-.cap{font-size:10.5px;font-weight:600;letter-spacing:.09em;color:var(--dm2);padding:20px 10px 7px}
-.plist{display:flex;flex-direction:column;gap:1px;overflow-y:auto;min-height:0;margin-top:14px}
-.pnew{width:100%;background:var(--s2);border:1px solid var(--ac);border-radius:8px;color:var(--tx);
-  font:inherit;font-size:13px;padding:8px 10px;outline:0}
-.pj{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;
-  border-radius:8px;color:var(--dm);font-size:13px;cursor:pointer;transition:.14s;user-select:none}
-.pj:hover{color:var(--tx);background:var(--s1)}
-.pj.on{color:var(--tx);background:var(--s2)}
-.pj span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pj b{font-size:11px;font-weight:600;color:var(--dm2);font-variant-numeric:tabular-nums;flex:none}
 .grow{flex:1;min-height:8px}
 .stat{display:flex;align-items:center;gap:7px;padding:9px 10px;font-size:11.5px;color:var(--dm);
   border-top:1px solid var(--ln);font-variant-numeric:tabular-nums}
@@ -74,10 +64,17 @@ body{background:var(--bg);color:var(--tx);overflow:hidden;
 .blank p{color:var(--dm2);margin-top:8px;font-size:13px}
 .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
 .card{position:relative;aspect-ratio:16/9;border-radius:11px;overflow:hidden;cursor:zoom-in;
-  background:var(--s1);border:1px solid var(--ln);transition:.16s}
+  background:var(--s1);border:1px solid var(--ln);transition:.16s;cursor:grab}
 .card:first-child{grid-column:span 2;grid-row:span 2;aspect-ratio:auto}
 .card img{width:100%;height:100%;object-fit:cover;display:block}
-.card:hover{border-color:var(--ln2)}
+.card:hover{border-color:var(--ln2);transform:translateY(-2px);box-shadow:0 10px 26px rgba(0,0,0,.4)}
+.card.dragging{opacity:.4;cursor:grabbing}
+.acts{position:absolute;top:8px;right:8px;display:flex;gap:6px;opacity:0;transition:.15s}
+.card:hover .acts{opacity:1}
+.acb{width:26px;height:26px;border-radius:8px;border:1px solid var(--ln2);
+  background:rgba(12,12,18,.82);color:var(--tx);display:grid;place-items:center;cursor:pointer}
+.acb:hover{background:rgba(109,109,240,.4);border-color:var(--ac2)}
+.acb svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2}
 .card .tag{position:absolute;left:8px;right:8px;bottom:8px;font-size:10.5px;font-weight:600;
   color:#fff;opacity:0;transition:.16s;text-shadow:0 1px 6px rgba(0,0,0,.9);
   font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -122,7 +119,7 @@ body{background:var(--bg);color:var(--tx);overflow:hidden;
 
 
 /* attachments live inside the composer, Flow-style */
-.attach{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 7px 2px}
+.attach{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:0 0 7px 2px}
 .att{position:relative;width:56px;height:56px;border-radius:9px;overflow:hidden;
   border:1px solid var(--ln2);background:var(--s2);flex:none}
 .att img{width:100%;height:100%;object-fit:cover;display:block}
@@ -130,6 +127,14 @@ body{background:var(--bg);color:var(--tx);overflow:hidden;
   background:rgba(0,0,0,.75);color:#fff;font-size:11px;line-height:1;cursor:pointer;display:grid;place-items:center}
 .att button:hover{background:var(--bad)}
 .att.up{display:grid;place-items:center;color:var(--dm2);font-size:10px}
+.att .idx{position:absolute;left:3px;bottom:3px;font-size:9px;font-weight:700;color:#fff;
+  background:rgba(0,0,0,.7);border-radius:6px;padding:1px 4px;font-variant-numeric:tabular-nums}
+.attcap{display:flex;align-items:center;gap:8px;width:100%;font-size:10px;font-weight:700;
+  letter-spacing:.12em;color:var(--dm2);margin-bottom:6px}
+.attcap span:last-child{margin-left:auto;font-variant-numeric:tabular-nums;letter-spacing:0}
+.addref{width:56px;height:56px;flex:none;border-radius:9px;border:1px dashed var(--ln2);
+  background:0;color:var(--dm2);font-size:20px;display:grid;place-items:center;cursor:pointer;transition:.14s}
+.addref:hover{color:var(--ac2);border-color:var(--ac2);background:rgba(109,109,240,.08)}
 .chipstyle{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:99px;
   background:rgba(109,109,240,.16);border:1px solid var(--ac);color:var(--ac2);font-size:11.5px;font-weight:600}
 .chipstyle button{border:0;background:0;color:inherit;cursor:pointer;font-size:13px;line-height:1;padding:0}
@@ -154,11 +159,11 @@ body{background:var(--bg);color:var(--tx);overflow:hidden;
   background:rgba(5,5,8,.96);backdrop-filter:blur(10px);cursor:zoom-out}
 .lb.open{display:grid}
 .lbin{display:flex;flex-direction:column;gap:12px;max-height:100%;max-width:100%;align-items:center;cursor:default}
-.lb img{max-width:min(1500px,94vw);max-height:80vh;border-radius:12px;display:block;
+.lb img{max-width:min(1600px,96vw);max-height:84vh;border-radius:14px;display:block;
   box-shadow:0 30px 90px rgba(0,0,0,.7)}
 .lbcap{display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:center;
   font-size:12.5px;color:var(--dm);font-variant-numeric:tabular-nums}
-.lbcap b{color:var(--tx);font-size:14px;font-weight:600}
+.lbcap b{color:var(--tx);font-size:17px;font-weight:650}
 .lbcap .pr{color:var(--dm);max-width:760px;text-align:center}
 .lbcap a{color:var(--ac2);text-decoration:none;border:1px solid var(--ln2);padding:5px 11px;border-radius:8px}
 .lbcap a:hover{background:var(--s2)}
@@ -193,7 +198,6 @@ body{background:var(--bg);color:var(--tx);overflow:hidden;
     <div class="logo"><div class="mark"></div><h1>Studio</h1></div>
     <button class="newbtn" id="newp">
       <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New project</button>
-    <div class="plist" id="plist"></div>
     <div class="grow"></div>
     <div class="stat"><span class="dot" id="dot"></span><span id="stat">connecting</span></div>
   </aside>
@@ -233,7 +237,7 @@ body{background:var(--bg);color:var(--tx);overflow:hidden;
       <div class="hint" id="hint"></div>
     </div></div>
 
-    <div class="drop" id="drop"><div>Drop images to add as reference</div></div>
+    <div class="drop" id="drop"><div>Drop to add as reference</div></div>
   </main>
 </div>
 
@@ -271,8 +275,6 @@ async function poll(){
 async function loadProjects(){
   const {projects} = await api('/projects');
   if(!projects.some(p => p.name === project)) project = projects[0].name;
-  $('plist').innerHTML = projects.map(p =>
-    `<div class="pj${p.name===project?' on':''}" data-n="${p.name}"><span>${p.name}</span></div>`).join('');
   $('pname').textContent = project;
   localStorage.setItem('studio.project', project);
 }
@@ -281,36 +283,35 @@ async function switchTo(name){
   $('p').value = ''; $('hint').textContent = '';
   await loadProjects(); paintAttach(); await loadShots();
 }
-$('plist').onclick = e => { const el = e.target.closest('.pj'); if(el) switchTo(el.dataset.n); };
-$('newp').onclick = () => {
-  if($('pnew')) return $('pnew').focus();
-  const box = document.createElement('input');
-  box.id = 'pnew'; box.className = 'pnew'; box.placeholder = 'Project name…';
-  $('plist').prepend(box); box.focus();
-  const done = async commit => {
-    const v = box.value.trim(); box.remove();
-    if(!commit || !v) return;
-    const r = await jpost('/projects', {name: v});
-    await switchTo(r.name);
-  };
-  box.onkeydown = e => {
-    if(e.key === 'Enter'){ e.preventDefault(); done(true); }
-    if(e.key === 'Escape'){ e.preventDefault(); done(false); }
-  };
-  box.onblur = () => done(true);
+// New Project opens a blank project immediately, Gemini-Flow style.
+$('newp').onclick = async () => {
+  const r = await jpost('/projects', {name: await uniqueProjectName()});
+  await switchTo(r.name);
 };
+async function uniqueProjectName(){
+  const {projects} = await api('/projects');
+  const taken = new Set(projects.map(p => p.name));
+  let name = 'untitled', i = 1;
+  while(taken.has(name)) name = `untitled ${++i}`;
+  return name;
+}
 
 /* ---------- attachments (the reference mechanism) ---------- */
 function paintAttach(){
+  const thumbs = attached.map((n,i) =>
+    `<div class="att" title="${n}"><img src="${imgURL('ref',n)}" alt="" data-n="${n}">
+       <b class="idx">${i+1}</b><button data-x="${n}" title="Remove">&times;</button></div>`).join('');
+  const chip = stylePreset ? `<span class="chipstyle">${stylePreset}<button id="rmstyle">&times;</button></span>` : '';
   $('attach').innerHTML =
-    attached.map(n => `<div class="att"><img src="${imgURL('ref',n)}" alt="" data-n="${n}">
-        <button data-x="${n}" title="Remove">&times;</button></div>`).join('')
-    + (stylePreset ? `<span class="chipstyle">${stylePreset}<button id="rmstyle">&times;</button></span>` : '');
+    `<div class="attcap"><span>REFERENCE</span><span>${attached.length}/2</span></div>`
+    + thumbs + chip
+    + `<button class="addref" id="addref" title="Add reference images">+</button>`;
 }
 $('attach').onclick = e => {
   const x = e.target.closest('[data-x]');
   if(x){ attached = attached.filter(n => n !== x.dataset.x); return paintAttach(); }
   if(e.target.id === 'rmstyle'){ stylePreset = null; return paintAttach(); }
+  if(e.target.id === 'addref'){ $('file').click(); return; }
   const im = e.target.closest('img');
   if(im) openLightbox('ref', im.dataset.n, '');
 };
@@ -331,6 +332,19 @@ async function attach(files){
     ? `${attached.length} references — the model uses the first 2` : '';
   paintAttach();
 }
+// Turn a generated shot into a real reference image (click, drag, or right-click).
+async function useAsRef(name){
+  try{
+    const blob = await fetch(imgURL('shot',name)).then(r => r.blob());
+    const data = await new Promise(r => { const fr=new FileReader(); fr.onload=()=>r(fr.result); fr.readAsDataURL(blob); });
+    const up = await jpost('/upload', {project, name, data});
+    if(!attached.includes(up.name)) attached.push(up.name);
+    paintAttach();
+    $('hint').textContent = attached.length > 2
+      ? `${attached.length} references — the model uses the first 2`
+      : `${up.name} added as reference`;
+  }catch(err){ $('hint').textContent = String(err); }
+}
 $('clip').onclick = () => $('file').click();
 $('file').onchange = e => { attach(e.target.files); e.target.value = ''; };
 window.addEventListener('paste', e => { if(e.clipboardData?.files?.length) attach(e.clipboardData.files); });
@@ -348,7 +362,9 @@ const main = $('main');
 main.addEventListener('dragleave', () => { if(--depth <= 0){ depth = 0; $('drop').classList.remove('on'); } });
 main.addEventListener('drop', e => {
   e.preventDefault(); depth = 0; $('drop').classList.remove('on');
-  if(e.dataTransfer.files?.length) attach(e.dataTransfer.files);
+  const shot = e.dataTransfer.getData('application/x-studio-shot');
+  if(shot) return useAsRef(shot);                 // a shot dragged from the feed
+  if(e.dataTransfer.files?.length) attach(e.dataTransfer.files); // OS files
 });
 
 /* ---------- preset styles ---------- */
@@ -365,13 +381,17 @@ async function loadShots(){
 function render(working, error){
   const f = $('feedin');
   if(!shots.length && !working && !error){
-    f.innerHTML = `<div class="blank"><h2>Every shot, <b>one style.</b></h2>
-      <p>Describe a beat below. Drop images in to steer the look.</p></div>`;
+    f.innerHTML = `<div class="blank"><p>No shots yet — describe a beat below.
+      Click any image to use it as a style reference, or drag it into the composer.</p></div>`;
     return;
   }
   const cells = shots.map(s =>
-    `<div class="card" data-n="${s.name}" data-p="${encodeURIComponent(s.prompt||'')}">
+    `<div class="card" data-n="${s.name}" data-p="${encodeURIComponent(s.prompt||'')}" draggable="true">
        <img loading="lazy" src="${imgURL('shot',s.name)}" alt="">
+       <div class="acts">
+         <button class="acb" data-act="attach" title="Use as reference"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+         <button class="acb" data-act="preview" title="Preview"><svg viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
+       </div>
        <span class="tag">${s.prompt || s.name}</span></div>`);
   if(working) cells.unshift(`<div class="working"><div class="muted"><div class="spin"></div><span id="el">0.0s</span></div></div>`);
   f.innerHTML = (error?`<div class="err">${error}</div>`:'') + `<div class="grid ${view}">${cells.join('')}</div>`;
@@ -382,10 +402,32 @@ $('vt').onclick = e => {
   [...$('vt').children].forEach(x => x.classList.toggle('on', x.dataset.v === view));
   render();
 };
+// Click-to-attach, Flow-style: clicking a shot adds its image to the composer.
 $('feedin').onclick = e => {
+  const act = e.target.closest('.acb');
+  const c = e.target.closest('.card');
+  if(act && c){
+    e.stopPropagation();
+    if(act.dataset.act === 'preview') openLightbox('shot', c.dataset.n, decodeURIComponent(c.dataset.p||''));
+    else useAsRef(c.dataset.n);
+    return;
+  }
+  if(c) useAsRef(c.dataset.n);
+};
+$('feedin').ondblclick = e => {
   const c = e.target.closest('.card'); if(!c) return;
   openLightbox('shot', c.dataset.n, decodeURIComponent(c.dataset.p||''));
 };
+// Make feed shots draggable into the composer (the reference drop target).
+$('feedin').addEventListener('dragstart', e => {
+  const c = e.target.closest('.card'); if(!c) return;
+  e.dataTransfer.setData('application/x-studio-shot', c.dataset.n);
+  e.dataTransfer.effectAllowed = 'copy';
+  c.classList.add('dragging');
+});
+$('feedin').addEventListener('dragend', e => {
+  const c = e.target.closest('.card'); if(c) c.classList.remove('dragging');
+});
 
 /* ---------- lightbox ---------- */
 function openLightbox(kind, name, promptText){
@@ -452,13 +494,7 @@ menu.onclick = async e => {
     link.href = imgURL(kind,n); link.download = n; link.click(); return;
   }
   if(a === 'detach'){ attached = attached.filter(x => x !== n); return paintAttach(); }
-  if(a === 'useref'){
-    // attach the actual image, not its text
-    const blob = await fetch(imgURL('shot',n)).then(r => r.blob());
-    const data = await new Promise(r => { const fr=new FileReader(); fr.onload=()=>r(fr.result); fr.readAsDataURL(blob); });
-    const up = await jpost('/upload', {project, name:n, data});
-    attached.push(up.name); return paintAttach();
-  }
+  if(a === 'useref'){ return useAsRef(n); }
   if(a === 'del'){
     await fetch(imgURL(kind,n), {method:'DELETE'});
     attached = attached.filter(x => x !== n);
