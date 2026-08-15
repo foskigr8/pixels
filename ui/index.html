@@ -63,6 +63,11 @@ svg{display:block}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--dim2);flex:none}
 .dot.ok{background:var(--ok);box-shadow:0 0 8px var(--ok)}
 .dot.bad{background:var(--bad)}
+.seg{display:flex;gap:2px;background:var(--s1);border:1px solid var(--ln);border-radius:9px;padding:2px}
+.seg button{padding:5px 13px;border:0;border-radius:7px;background:0;color:var(--dm2);cursor:pointer;
+  font:inherit;font-size:12.5px;font-weight:500;transition:.14s}
+.seg button:hover{color:var(--tx)}
+.seg button.on{background:var(--s2);color:var(--tx)}
 .vt{display:flex;gap:2px;padding:2px;border-radius:9px;background:var(--panel);
   border:1px solid var(--line);flex:none}
 .vt button{width:30px;height:26px;border-radius:7px;display:grid;place-items:center;color:var(--dim2)}
@@ -247,6 +252,10 @@ svg{display:block}
       </div>
     </div>
     <div class="grow"></div>
+    <div class="seg" id="seg">
+      <button data-m="shots" class="on">Generated</button>
+      <button data-m="refs">Reference</button>
+    </div>
     <div class="vt" id="vt">
       <button data-v="grid" class="on" title="Grid"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg></button>
       <button data-v="list" title="List"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/></svg></button>
@@ -297,9 +306,10 @@ const imgURL = (kind,name) => kind === 'frame'
 const base = name => String(name).split('/').pop();
 
 let project = localStorage.getItem('studio.project') || 'untitled';
-let attached = [], shots = [], videos = [], busy = false;
+let attached = [], shots = [], videos = [], railItems = [], busy = false;
 let stylePreset = null, presets = {};
 let view = localStorage.getItem('studio.view') || 'grid';
+let mode = 'shots';                       // which collection the grid shows
 
 /* ---------- status ---------- */
 async function poll(){
@@ -318,7 +328,10 @@ async function poll(){
 /* ---------- projects ---------- */
 async function loadProjects(){
   const {projects} = await api('/projects');
-  if(!projects.some(p => p.name === project)) project = projects[0].name;
+  // An empty studio is valid: keep a working name so the first generate has
+  // somewhere to go, but do not create anything on disk until it is needed.
+  if(!projects.length) project = project || 'untitled';
+  else if(!projects.some(p => p.name === project)) project = projects[0].name;
   $('pname').textContent = project;
   $('pmList').innerHTML = projects.map(p =>
     `<button class="pmi${p.name===project?' on':''}" data-n="${p.name}">
@@ -382,9 +395,13 @@ async function loadRefs(){
     for(const f of vid.frames) items.push({kind:'frame', name:`${vid.video}/${f}`, label:f.replace(/\.\w+$/,'').replace(/^\d+_/,'')});
   }
   for(const f of r) items.push({kind:'ref', name:f, label:f.replace(/\.\w+$/,'')});
+  railItems = items;
   $('rail').innerHTML = items.map(it =>
     `<div class="cl" draggable="true" data-kind="${it.kind}" data-name="${it.name.replace(/"/g,'&quot;')}"
         title="${it.name}"><img loading="lazy" src="${imgURL(it.kind,it.name)}" alt="">
+       <div class="acts">
+         <button class="acb" data-act="preview" title="Preview"><svg viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
+       </div>
        <span class="cln">${it.label}</span>
        ${it.kind==='ref'?`<button class="rm" data-rm="${it.name.replace(/"/g,'&quot;')}">&times;</button>`:''}</div>`).join('')
     + `<button class="addclip" id="addclip" title="Add image from disk">+</button>`;
@@ -393,7 +410,10 @@ $('rail').onclick = e => {
   if(e.target.id === 'addclip' || e.target.closest('#addclip')){ $('file').click(); return; }
   const rm = e.target.closest('.rm');
   if(rm){ e.stopPropagation(); removeRef(rm.dataset.rm); return; }
+  const act = e.target.closest('.acb');
   const c = e.target.closest('.cl'); if(!c) return;
+  if(act && act.dataset.act === 'preview'){ e.stopPropagation();
+    return openLightbox(c.dataset.kind, c.dataset.name); }
   useAsRef(c.dataset.kind, c.dataset.name);
 };
 async function removeRef(name){
@@ -495,9 +515,12 @@ function render(working, error){
       or grab a <b>reference clip</b> below to steer the look.</p></div>`;
     return;
   }
-  const cells = shots.map(s =>
-    `<div class="card" data-n="${s.name}" data-p="${encodeURIComponent(s.prompt||'')}" draggable="true">
-       <img loading="lazy" src="${imgURL('shot',s.name)}" alt="">
+  const kind = mode === 'shots' ? 'shot' : 'ref';
+  const items = mode === 'shots' ? shots
+    : (railItems.filter(i => i.kind === 'ref').map(i => ({name: i.name, prompt: ''})));
+  const cells = items.map(s =>
+    `<div class="card" data-k="${kind}" data-n="${s.name}" data-p="${encodeURIComponent(s.prompt||'')}" draggable="true">
+       <img loading="lazy" src="${imgURL(kind,s.name)}" alt="">
        <div class="acts">
          <button class="acb" data-act="attach" title="Use as reference"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
          <button class="acb" data-act="preview" title="Preview"><svg viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
@@ -506,6 +529,12 @@ function render(working, error){
   if(working) cells.unshift(`<div class="working"><div class="muted"><div class="spin"></div><span id="el">0.0s</span></div></div>`);
   f.innerHTML = (error?`<div class="err">${error}</div>`:'') + `<div class="grid ${view}">${cells.join('')}</div>`;
 }
+$('seg').onclick = e => {
+  const b = e.target.closest('button'); if(!b) return;
+  mode = b.dataset.m;
+  [...$('seg').children].forEach(x => x.classList.toggle('on', x.dataset.m === mode));
+  render();
+};
 $('vt').onclick = e => {
   const b = e.target.closest('button'); if(!b) return;
   view = b.dataset.v; localStorage.setItem('studio.view', view);
@@ -516,8 +545,11 @@ $('vt').onclick = e => {
 $('feedin').onclick = e => {
   const act = e.target.closest('.acb');
   const c = e.target.closest('.card');
-  if(act && c){ e.stopPropagation(); act.dataset.act === 'preview' ? openLightbox('shot', c.dataset.n, c.dataset.p) : useAsRef('shot', c.dataset.n); return; }
-  if(c) openLightbox('shot', c.dataset.n, c.dataset.p);
+  if(act && c){ e.stopPropagation();
+    const k = c.dataset.k || 'shot';
+    act.dataset.act === 'preview' ? openLightbox(k, c.dataset.n, c.dataset.p) : useAsRef(k, c.dataset.n);
+    return; }
+  if(c) openLightbox(c.dataset.k || 'shot', c.dataset.n, c.dataset.p);
 };
 $('feedin').ondblclick = e => { const c = e.target.closest('.card'); if(c) openLightbox('shot', c.dataset.n, c.dataset.p); };
 $('feedin').addEventListener('dragstart', e => {
@@ -531,6 +563,8 @@ $('rail').addEventListener('dragstart', e => {
   setDrag(e, {kind:c.dataset.kind, name:c.dataset.name});
   c.classList.add('dragging');
 });
+$('rail').ondblclick = e => { const c = e.target.closest('.cl');
+  if(c) openLightbox(c.dataset.kind, c.dataset.name); };
 $('rail').addEventListener('dragend', e => { const c = e.target.closest('.cl'); if(c) c.classList.remove('dragging'); });
 
 /* ---------- lightbox (big preview) ---------- */

@@ -330,9 +330,8 @@ def projects():
             out.append({"name": d.name,
                         "shots": len(list(d.glob("*.png"))),
                         "refs": len(list((REFS / d.name).glob("*"))) if (REFS / d.name).exists() else 0})
-    if not out:
-        pdirs("untitled")
-        out = [{"name": "untitled", "shots": 0, "refs": 0}]
+    # No implicit project: an empty studio starts empty. Directories are created
+    # on first generate or upload, not on first page load.
     return {"projects": out}
 
 
