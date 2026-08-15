@@ -1,8 +1,10 @@
 # Stickman
 
 Reference corpus and production setup for making [Whymentary](https://www.youtube.com/@Whymentary)-style
-stickman explainer videos: flat black monoline characters on a pure white canvas,
-mechanical metaphors for scientific concepts, a visual beat every ~2 seconds.
+stickman explainer videos: black monoline characters on a pure white canvas, filled with
+flat saturated color that carries fixed meaning — red is heat and failure, green is
+biology, blue is water and cool. Mechanical metaphors for scientific concepts, and a
+visual beat every ~2 seconds.
 
 The repo holds two things — **the style bible**, derived from frame-by-frame analysis of
 all 6 published channel videos, and **a Kaggle notebook** that puts VS Code and an image

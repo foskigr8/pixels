@@ -37,9 +37,15 @@ block that works:
 
 ```
 minimal hand-drawn stickman on a pure white background, thick 6px solid black
-monoline ink strokes, flat color fills, no gradients, no shadows, whiteboard
-explainer illustration
+monoline ink strokes, flat saturated color fills, no gradients, no shadows,
+whiteboard explainer illustration
 ```
+
+Black is the *linework only* — it is not a monochrome style. Scenes carry flat
+saturated color, and it's meaningful: name the specific colors the shot needs
+(`red squiggly heat lines`, `bright green acid`, `pink stomach lining`) rather than
+relying on "flat color fills" to produce them. A prompt that omits color tends to
+come back black-and-white.
 
 Pass a real keyframe from `frames/` as a reference image whenever the shot needs to
 match an existing look — it's far more reliable than describing the style in words.
