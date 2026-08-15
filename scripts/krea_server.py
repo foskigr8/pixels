@@ -102,7 +102,9 @@ if MODEL_TYPE.endswith("_edit"):
 # only once you have confirmed the post-load sweep is covering for it.
 ALLOW_UNPATCHED = os.environ.get("KREA_ALLOW_UNPATCHED", "0") == "1"
 
-# Defaults tuned for iteration speed on one T4, not for final quality.
+# Defaults tuned for turbo on one T4. Note these differ sharply from the
+# upstream generate() defaults (sampling_steps=28, guide_scale=4.5), which are
+# for the non-distilled model -- using those here is 3x slower for no gain.
 DEF_WIDTH = int(os.environ.get("KREA_WIDTH", "1024"))
 DEF_HEIGHT = int(os.environ.get("KREA_HEIGHT", "576"))
 DEF_STEPS = int(os.environ.get("KREA_STEPS", "8"))
@@ -171,11 +173,15 @@ def apply_source_patches() -> dict[str, Any]:
         log("[patch] !! upstream drifted. Fix scripts/patches/t4_fp16.json against")
         log("[patch] !! your pinned WAN2GP_COMMIT before debugging anything else.")
         required = {p["name"] for p in patches if p.get("required", True)}
-        if required & set(missing) and not ALLOW_UNPATCHED:
+        blocking = sorted(required & set(missing))
+        if blocking and not ALLOW_UNPATCHED:
             raise SystemExit(
-                "refusing to start: a required fp16 patch did not match upstream.\n"
-                "Set KREA_ALLOW_UNPATCHED=1 to start anyway and rely on the "
-                "post-load fp16 sweep (slower load, but it does work)."
+                f"refusing to start: required fp16 patch(es) did not match: {blocking}\n"
+                "These have no argument-level equivalent, so a miss means bf16 tensors\n"
+                "reach Turing kernels. Either fix the find-strings in\n"
+                f"{PATCH_FILE}\n"
+                "or set KREA_ALLOW_UNPATCHED=1 to lean on the post-load fp16 sweep\n"
+                "(slower load, but it does produce correct output)."
             )
 
     return {"applied": ok, "total": total, "missing": missing}

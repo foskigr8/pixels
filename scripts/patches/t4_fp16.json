@@ -2,17 +2,21 @@
   "_README": [
     "fp16 patch table for Krea 2 on Kaggle T4 (Turing / SM75, no bf16).",
     "",
-    "These strings are VERIFIED -- taken from a working notebook, not guessed.",
-    "krea2_main.py hardcodes bf16 and its three offload.load_model_data calls",
-    "pass no preprocess_sd, so weights arrive bf16 and die on Turing kernels.",
+    "Verified against Wan2GP @ 7f06022 with --probe:",
+    "  dtype_override           MATCHES   (required)",
+    "  transformer_preprocess   MATCHES   (required)",
+    "  text_encoder_preprocess  NO MATCH  (optional -- dtype= arg covers it)",
+    "  vae_preprocess           NO MATCH  (optional -- VAE_dtype= arg covers it)",
     "",
-    "Patch 1 comments out the dtype override. Patches 2-4 wrap each loader with",
-    "a preprocess_sd that casts every floating tensor to the active dtype.",
+    "The two required patches have no argument-level equivalent, so they stay",
+    "required and the server refuses to boot without them. The two optional ones",
+    "are belt-and-braces: load_model already accepts dtype and VAE_dtype, and the",
+    "post-load sweep casts whatever survives. Do not mark them required again",
+    "without first confirming they match.",
     "",
-    "krea_server.py also runs a post-load sweep, so a NO MATCH costs load time,",
-    "not correctness. Verify with: python scripts/krea_server.py --probe"
+    "Re-check with: python scripts/krea_server.py --probe"
   ],
-  "verified_against": "working AIQUEST notebook, Wan2GP @ 7f06022",
+  "verified_against": "Wan2GP @ 7f06022de44538c66fa461645952d7df9d763575 (probed)",
   "patches": [
     {
       "name": "dtype_override",
@@ -38,8 +42,8 @@
       "find": "offload.load_model_data(text_encoder.language_model, text_encoder_filename, modelPrefix=\"language_model\", writable_tensors=False, default_dtype=dtype)",
       "replace": "def te_preprocess(sd):\n        return {k: v.to(dtype) if (isinstance(v, torch.Tensor) and v.is_floating_point()) else v for k, v in sd.items()}\n    offload.load_model_data(text_encoder.language_model, text_encoder_filename, modelPrefix=\"language_model\", writable_tensors=False, preprocess_sd=te_preprocess, default_dtype=dtype)",
       "count": 1,
-      "required": true,
-      "note": "Qwen3-VL language model. No preprocess_sd upstream, so this adds one."
+      "required": false,
+      "note": "Optional. Did not match Wan2GP @7f06022 -- the call signature moved. Covered anyway: load_model takes dtype=float16 directly, and the post-load fp16 sweep catches anything left."
     },
     {
       "name": "vae_preprocess",
@@ -47,8 +51,8 @@
       "find": "offload.load_model_data(vae, filename, writable_tensors=False, default_dtype=dtype)",
       "replace": "def vae_preprocess(sd):\n        return {k: v.to(dtype) if (isinstance(v, torch.Tensor) and v.is_floating_point()) else v for k, v in sd.items()}\n    offload.load_model_data(vae, filename, writable_tensors=False, preprocess_sd=vae_preprocess, default_dtype=dtype)",
       "count": 1,
-      "required": true,
-      "note": "A bf16 VAE fails at decode -- after you already paid for every diffusion step."
+      "required": false,
+      "note": "Optional. Did not match Wan2GP @7f06022. Covered by the explicit VAE_dtype=torch.float16 argument to load_model, confirmed present in the signature, plus the post-load sweep."
     }
   ]
 }
