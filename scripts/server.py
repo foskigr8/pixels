@@ -40,6 +40,7 @@ from typing import Any
 REPO = Path(os.environ.get("STUDIO_DIR", Path(__file__).resolve().parent.parent))
 WAN2GP = Path(os.environ.get("WAN2GP_DIR", "/kaggle/working/Wan2GP"))
 SHOTS = Path(os.environ.get("SHOTS_DIR", REPO / "shots"))
+REFS = REPO / "refs"
 UI = REPO / "ui"
 PATCHES = Path(__file__).resolve().parent / "patches" / "t4_fp16.json"
 
@@ -242,16 +243,35 @@ def load() -> None:
 # api
 # ---------------------------------------------------------------------------
 
+import base64  # noqa: E402
+import re  # noqa: E402
+
 from fastapi import FastAPI, HTTPException  # noqa: E402
 from fastapi.responses import FileResponse, HTMLResponse  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
 app = FastAPI(title="studio")
 
+SAFE = re.compile(r"[^a-zA-Z0-9 _-]")
+
+
+def slug(name: str) -> str:
+    s = SAFE.sub("", (name or "").strip())[:48].strip()
+    return s or "untitled"
+
+
+def pdirs(project: str) -> tuple[Path, Path]:
+    """(shots, refs) for a project. Created on demand."""
+    p = slug(project)
+    a, b = SHOTS / p, REFS / p
+    a.mkdir(parents=True, exist_ok=True)
+    b.mkdir(parents=True, exist_ok=True)
+    return a, b
+
 
 class Req(BaseModel):
     prompt: str
-    preset: str | None = None
+    project: str = "untitled"
     width: int = 1024
     height: int = 576
     steps: int = 8
@@ -259,67 +279,122 @@ class Req(BaseModel):
     ref_paths: list[str] = []
 
 
+class NewProject(BaseModel):
+    name: str
+
+
+class Upload(BaseModel):
+    project: str
+    name: str
+    data: str          # data: URL or bare base64
+
+
 @app.get("/", response_class=HTMLResponse)
 def index():
     return (UI / "index.html").read_text()
-
-
-@app.get("/api/config")
-def config():
-    vids = sorted(p.name for p in (REPO / "frames").iterdir() if p.is_dir()) \
-        if (REPO / "frames").exists() else []
-    return {"presets": PRESETS, "videos": vids, "style": STYLE}
 
 
 @app.get("/api/health")
 def health():
     import torch
 
-    free = None
-    if torch.cuda.is_available():
-        free = round(torch.cuda.mem_get_info(0)[0] / 2**30, 2)
+    free = round(torch.cuda.mem_get_info(0)[0] / 2**30, 2) if torch.cuda.is_available() else None
     return {"status": "ready" if STATE["ready"] else "loading",
-            "model": MODEL_TYPE, "vram_free_gb": free,
-            "generated": len(HISTORY), **STATE["report"]}
+            "vram_free_gb": free, "generated": len(HISTORY), **STATE["report"]}
 
 
 @app.get("/api/stats")
 def stats():
     t = sorted(h["generate_s"] for h in HISTORY)
-    if not t:
-        return {"n": 0}
-    return {"n": len(t), "min_s": t[0], "median_s": t[len(t) // 2], "max_s": t[-1]}
+    return {"n": len(t), **({"min_s": t[0], "median_s": t[len(t) // 2], "max_s": t[-1]} if t else {})}
 
 
-@app.get("/api/refs")
-def refs(video: str = ""):
-    d = REPO / "frames" / video
-    return {"refs": sorted(str(p.relative_to(REPO)) for p in d.glob("*.jpg"))
-            if d.exists() else []}
+@app.get("/api/projects")
+def projects():
+    SHOTS.mkdir(parents=True, exist_ok=True)
+    out = []
+    for d in sorted(SHOTS.iterdir()):
+        if d.is_dir():
+            out.append({"name": d.name,
+                        "shots": len(list(d.glob("*.png"))),
+                        "refs": len(list((REFS / d.name).glob("*"))) if (REFS / d.name).exists() else 0})
+    if not out:
+        pdirs("untitled")
+        out = [{"name": "untitled", "shots": 0, "refs": 0}]
+    return {"projects": out}
 
 
-@app.get("/api/file")
-def file(path: str):
-    p = (REPO / path).resolve()
-    if not p.is_file() or REPO.resolve() not in p.parents:
-        raise HTTPException(404, "not found")
-    return FileResponse(p)
+@app.post("/api/projects")
+def new_project(p: NewProject):
+    name = slug(p.name)
+    pdirs(name)
+    return {"name": name}
 
 
 @app.get("/api/shots")
-def shots():
-    if not SHOTS.exists():
-        return {"shots": []}
-    ps = sorted(SHOTS.glob("*.png"), key=lambda p: p.stat().st_mtime, reverse=True)
-    return {"shots": [p.name for p in ps[:40]]}
+def shots(project: str = "untitled"):
+    d, _ = pdirs(project)
+    ps = sorted(d.glob("*.png"), key=lambda p: p.stat().st_mtime, reverse=True)
+    out = []
+    for p in ps[:80]:
+        meta = {}
+        side = p.with_suffix(".json")
+        if side.exists():
+            try:
+                meta = json.loads(side.read_text())
+            except Exception:
+                pass
+        out.append({"name": p.name, "prompt": meta.get("prompt", ""),
+                    "seed": meta.get("seed"), "secs": meta.get("generate_s")})
+    return {"shots": out}
 
 
-@app.get("/api/shot")
-def shot(name: str):
-    p = SHOTS / Path(name).name
-    if not p.is_file():
+@app.get("/api/refs")
+def refs(project: str = "untitled"):
+    """A project's own reference images, newest first."""
+    _, d = pdirs(project)
+    ps = sorted((p for p in d.iterdir() if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")),
+                key=lambda p: p.stat().st_mtime, reverse=True)
+    return {"refs": [p.name for p in ps]}
+
+
+@app.post("/api/upload")
+def upload(u: Upload):
+    """Drag-and-drop target. Base64 in JSON, so no multipart dependency."""
+    _, d = pdirs(u.project)
+    raw = u.data.split(",", 1)[-1]
+    try:
+        blob = base64.b64decode(raw)
+    except Exception:
+        raise HTTPException(400, "could not decode image data")
+    ext = Path(u.name).suffix.lower() or ".png"
+    if ext not in (".jpg", ".jpeg", ".png", ".webp"):
+        raise HTTPException(400, f"unsupported file type {ext}")
+    stem = slug(Path(u.name).stem) or "ref"
+    out = d / f"{stem}{ext}"
+    i = 1
+    while out.exists():
+        out = d / f"{stem}_{i}{ext}"
+        i += 1
+    out.write_bytes(blob)
+    return {"name": out.name}
+
+
+@app.get("/api/img")
+def img(project: str, name: str, kind: str = "shot"):
+    d = (pdirs(project)[0] if kind == "shot" else pdirs(project)[1]) / Path(name).name
+    if not d.is_file():
         raise HTTPException(404, "not found")
-    return FileResponse(p)
+    return FileResponse(d)
+
+
+@app.delete("/api/img")
+def delete(project: str, name: str, kind: str = "shot"):
+    d = (pdirs(project)[0] if kind == "shot" else pdirs(project)[1]) / Path(name).name
+    if d.is_file():
+        d.unlink()
+        d.with_suffix(".json").unlink(missing_ok=True)
+    return {"ok": True}
 
 
 @app.post("/api/generate")
@@ -332,26 +407,26 @@ def generate(r: Req):
     if r.width % 16 or r.height % 16:
         raise HTTPException(400, "width and height must be divisible by 16")
 
-    parts = [STYLE]
-    if r.preset and r.preset in PRESETS:
-        parts.append(PRESETS[r.preset])
-    parts.append(r.prompt.strip())
-    prompt = ". ".join(parts)
-
+    shots_dir, refs_dir = pdirs(r.project)
+    prompt = f"{STYLE}. {r.prompt.strip()}"
     seed = r.seed if r.seed >= 0 else int(time.time() * 1000) % (2**31)
-    refs_ = []
-    for rp in r.ref_paths[:2]:
-        p = (REPO / rp).resolve()
-        if p.is_file():
-            refs_.append(Image.open(p).convert("RGB"))
 
-    kw = dict(seed=seed, input_prompt=prompt, n_prompt=NEGATIVE,
-              sampling_steps=r.steps, width=r.width, height=r.height,
-              guide_scale=0.0, batch_size=1, loras_slists={"phase1": []})
-    if refs_:
-        # "I" must be present or Wan2GP drops references without warning.
-        kw["input_ref_images"] = refs_
-        kw["video_prompt_type"] = "KI"
+    # Wan2GP accepts at most 2 reference images; more are dropped upstream
+    # without a word, so cap here and say so in the response.
+    wanted = r.ref_paths[:]
+    used = wanted[:2]
+    imgs = []
+    for n in used:
+        p = refs_dir / Path(n).name
+        if p.is_file():
+            imgs.append(Image.open(p).convert("RGB"))
+
+    kw = dict(seed=seed, input_prompt=prompt, n_prompt=NEGATIVE, sampling_steps=r.steps,
+              width=r.width, height=r.height, guide_scale=0.0, batch_size=1,
+              loras_slists={"phase1": []})
+    if imgs:
+        kw["input_ref_images"] = imgs
+        kw["video_prompt_type"] = "KI"   # must contain "I" or refs are ignored
 
     with LOCK:
         t0 = time.time()
@@ -362,27 +437,28 @@ def generate(r: Req):
             torch.cuda.empty_cache()
             hint = ""
             if "device" in str(e).lower() and STATE["report"].get("device_split", {}).get("moved"):
-                hint = "  (looks cross-device -- try SPLIT_GPUS=0)"
+                hint = "  (cross-device -- try SPLIT_GPUS=0)"
             raise HTTPException(500, f"{type(e).__name__}: {e}{hint}")
-        dt = round(time.time() - t0, 1)
+        secs = round(time.time() - t0, 1)
 
-        # Krea returns [C, 1, H, W] uint8 -- a frame axis after the channels.
         t = out.detach().cpu() if hasattr(out, "detach") else out
-        if hasattr(t, "ndim") and t.ndim == 4:
+        if hasattr(t, "ndim") and t.ndim == 4:      # [C, 1, H, W]
             t = t[:, 0]
-        img = Image.fromarray(t.permute(1, 2, 0).numpy()) if hasattr(t, "permute") else t
+        img_ = Image.fromarray(t.permute(1, 2, 0).numpy()) if hasattr(t, "permute") else t
 
-        SHOTS.mkdir(parents=True, exist_ok=True)
-        n = max([int(p.stem.split("_")[1]) for p in SHOTS.glob("shot_*.png")
-                 if p.stem.split("_")[1].isdigit()] or [0]) + 1
+        n = max([int(m.group(1)) for p in shots_dir.glob("shot_*.png")
+                 if (m := re.match(r"shot_(\d+)", p.name))] or [0]) + 1
         name = f"shot_{n:03d}.png"
-        img.save(SHOTS / name)
+        img_.save(shots_dir / name)
+        (shots_dir / name).with_suffix(".json").write_text(json.dumps(
+            {"prompt": r.prompt.strip(), "seed": seed, "steps": r.steps,
+             "generate_s": secs, "refs": used}))
         torch.cuda.empty_cache()
 
-    rec = {"name": name, "generate_s": dt, "seed": seed,
-           "size": f"{img.width}x{img.height}", "refs": len(refs_)}
+    rec = {"name": name, "generate_s": secs, "seed": seed, "project": slug(r.project),
+           "refs_used": len(imgs), "refs_dropped": max(0, len(wanted) - 2)}
     HISTORY.append(rec)
-    log(f"[gen] {name} {dt}s seed={seed} refs={len(refs_)}")
+    log(f"[gen] {slug(r.project)}/{name} {secs}s seed={seed} refs={len(imgs)}")
     return rec
 
 

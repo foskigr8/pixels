@@ -16,41 +16,58 @@ html,body{height:100%}
 body{background:var(--bg);color:var(--tx);overflow:hidden;
   font:400 13.5px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif;
   -webkit-font-smoothing:antialiased}
-.app{display:grid;grid-template-columns:212px 1fr;height:100vh}
+.app{display:grid;grid-template-columns:216px 1fr;height:100vh}
 
 /* ---------- sidebar ---------- */
-.side{border-right:1px solid var(--ln);display:flex;flex-direction:column;padding:18px 12px}
-.logo{display:flex;align-items:center;gap:9px;padding:4px 8px 22px}
+.side{border-right:1px solid var(--ln);display:flex;flex-direction:column;padding:18px 12px;min-width:0}
+.logo{display:flex;align-items:center;gap:9px;padding:4px 8px 18px}
 .mark{width:19px;height:19px;border-radius:6px;
   background:linear-gradient(140deg,var(--ac2),var(--ac));box-shadow:0 0 14px rgba(109,109,240,.45)}
 .logo h1{font-size:15px;font-weight:600;letter-spacing:-.01em}
-nav{display:flex;flex-direction:column;gap:1px}
-.nav{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;color:var(--dm);
-  cursor:pointer;font-size:13px;font-weight:500;transition:.14s;user-select:none}
-.nav:hover{color:var(--tx);background:var(--s1)}
-.nav.on{color:var(--tx);background:var(--s2)}
-.nav svg{width:15px;height:15px;flex:none;stroke:currentColor;fill:none;stroke-width:1.7}
-.cap{font-size:10.5px;font-weight:600;letter-spacing:.09em;color:var(--dm2);padding:22px 10px 8px}
-.stylelist{display:flex;flex-direction:column;gap:1px}
-.st{padding:7px 10px;border-radius:8px;color:var(--dm);font-size:12.5px;cursor:pointer;
-  transition:.14s;user-select:none;display:flex;align-items:center;gap:8px}
-.st:hover{color:var(--tx);background:var(--s1)}
-.st.on{color:var(--tx);background:var(--s2)}
-.st i{width:4px;height:4px;border-radius:50%;background:var(--dm2);flex:none}
-.st.on i{background:var(--ac2);box-shadow:0 0 7px var(--ac2)}
-.grow{flex:1}
+.newbtn{display:flex;align-items:center;gap:8px;width:100%;padding:9px 11px;border-radius:9px;
+  background:var(--s2);border:1px solid var(--ln2);color:var(--tx);font:inherit;font-size:13px;
+  font-weight:500;cursor:pointer;transition:.14s}
+.newbtn:hover{background:rgba(109,109,240,.16);border-color:var(--ac)}
+.newbtn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
+.cap{font-size:10.5px;font-weight:600;letter-spacing:.09em;color:var(--dm2);padding:20px 10px 7px}
+.plist{display:flex;flex-direction:column;gap:1px;overflow-y:auto;min-height:0}
+.pj{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;
+  border-radius:8px;color:var(--dm);font-size:13px;cursor:pointer;transition:.14s;user-select:none}
+.pj:hover{color:var(--tx);background:var(--s1)}
+.pj.on{color:var(--tx);background:var(--s2)}
+.pj span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pj b{font-size:11px;font-weight:600;color:var(--dm2);font-variant-numeric:tabular-nums;flex:none}
+.grow{flex:1;min-height:8px}
 .stat{display:flex;align-items:center;gap:7px;padding:9px 10px;font-size:11.5px;color:var(--dm);
-  border-top:1px solid var(--ln);margin-top:14px;font-variant-numeric:tabular-nums}
+  border-top:1px solid var(--ln);font-variant-numeric:tabular-nums}
 .dot{width:6px;height:6px;border-radius:50%;background:var(--dm2);flex:none}
 .dot.ok{background:var(--ok);box-shadow:0 0 8px var(--ok)}
 .dot.bad{background:var(--bad)}
 
 /* ---------- main ---------- */
-.main{display:flex;flex-direction:column;min-width:0}
-.feed{flex:1;overflow-y:auto;padding:26px 28px 8px;scrollbar-width:thin}
+.main{display:flex;flex-direction:column;min-width:0;position:relative}
+.top{display:flex;align-items:center;gap:14px;padding:16px 26px 12px;border-bottom:1px solid var(--ln)}
+.top h2{font-size:15px;font-weight:600;letter-spacing:-.01em;flex:none}
+.refrail{display:flex;align-items:center;gap:6px;overflow-x:auto;flex:1;padding-bottom:2px}
+.refrail::-webkit-scrollbar{height:0}
+.rf{position:relative;width:60px;height:34px;border-radius:7px;overflow:hidden;flex:none;
+  border:2px solid transparent;cursor:pointer;background:var(--s2);transition:.14s}
+.rf img{width:100%;height:100%;object-fit:cover;display:block}
+.rf:hover{border-color:var(--ln2)}
+.rf.on{border-color:var(--ac2)}
+.rf .n{position:absolute;top:2px;right:3px;font-size:9px;font-weight:700;color:#fff;
+  background:var(--ac);border-radius:99px;padding:0 4px;display:none}
+.rf.on .n{display:block}
+.addref{width:60px;height:34px;border-radius:7px;border:1px dashed var(--ln2);background:0;
+  color:var(--dm2);display:grid;place-items:center;cursor:pointer;flex:none;transition:.14s}
+.addref:hover{color:var(--tx);border-color:var(--ac2)}
+.addref svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8}
+.emptyref{font-size:11.5px;color:var(--dm2)}
+
+.feed{flex:1;overflow-y:auto;padding:22px 26px 8px;scrollbar-width:thin}
 .feedin{max-width:1180px;margin:0 auto}
-.blank{height:100%;display:grid;place-items:center;text-align:center}
-.blank h2{font-size:26px;font-weight:300;letter-spacing:-.02em;color:#b9b9c8}
+.blank{padding:14vh 0;text-align:center}
+.blank h2{font-size:25px;font-weight:300;letter-spacing:-.02em;color:#b9b9c8}
 .blank h2 b{font-weight:650;color:#fff}
 .blank p{color:var(--dm2);margin-top:8px;font-size:13px}
 .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
@@ -59,42 +76,37 @@ nav{display:flex;flex-direction:column;gap:1px}
 .card:first-child{grid-column:span 2;grid-row:span 2;aspect-ratio:auto}
 .card img{width:100%;height:100%;object-fit:cover;display:block}
 .card:hover{border-color:var(--ln2)}
-.card .tag{position:absolute;left:8px;bottom:8px;right:8px;display:flex;justify-content:space-between;
-  gap:8px;font-size:10.5px;font-weight:600;color:#fff;opacity:0;transition:.16s;
-  font-variant-numeric:tabular-nums;text-shadow:0 1px 6px rgba(0,0,0,.9)}
+.card .tag{position:absolute;left:8px;right:8px;bottom:8px;font-size:10.5px;font-weight:600;
+  color:#fff;opacity:0;transition:.16s;text-shadow:0 1px 6px rgba(0,0,0,.9);
+  font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .card:hover .tag{opacity:1}
 .working{grid-column:span 2;grid-row:span 2;border-radius:11px;border:1px solid var(--ln);
-  background:var(--s1);display:grid;place-items:center;min-height:220px}
+  background:var(--s1);display:grid;place-items:center;min-height:210px}
 .spin{width:26px;height:26px;border:2.5px solid var(--ln2);border-top-color:var(--ac2);
   border-radius:50%;animation:sp .75s linear infinite;margin:0 auto 11px}
 @keyframes sp{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.spin{animation-duration:2.4s}}
 .muted{color:var(--dm2);font-size:12.5px;text-align:center;font-variant-numeric:tabular-nums}
-.err{margin:0 auto;max-width:620px;color:#fca5a5;background:rgba(248,113,113,.08);
+.err{margin:0 auto 12px;max-width:620px;color:#fca5a5;background:rgba(248,113,113,.08);
   border:1px solid rgba(248,113,113,.25);padding:13px 15px;border-radius:11px;
   font-size:12.5px;white-space:pre-wrap}
 
 /* ---------- composer ---------- */
-.dock{padding:10px 28px 22px;position:relative}
-.dockin{max-width:900px;margin:0 auto;position:relative}
+.dock{padding:10px 26px 20px;position:relative}
+.dockin{max-width:900px;margin:0 auto}
 .bar{display:flex;align-items:flex-end;gap:8px;padding:7px 7px 7px 8px;
   background:rgba(20,20,26,.9);border:1px solid var(--ln2);border-radius:22px;
   backdrop-filter:blur(24px);box-shadow:0 10px 42px rgba(0,0,0,.55);transition:border-color .16s}
 .bar:focus-within{border-color:rgba(157,157,255,.45)}
 .ib{width:36px;height:36px;flex:none;border-radius:11px;border:1px solid var(--ln);
-  background:var(--s1);color:var(--dm);display:grid;place-items:center;cursor:pointer;
-  transition:.14s;overflow:hidden;padding:0}
+  background:var(--s1);color:var(--dm);display:grid;place-items:center;cursor:pointer;transition:.14s}
 .ib:hover{color:var(--tx);border-color:var(--ln2)}
-.ib.has{border-color:var(--ac2)}
-.ib img{width:100%;height:100%;object-fit:cover}
 .ib svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7}
 #p{flex:1;background:0;border:0;outline:0;color:var(--tx);font:inherit;resize:none;
   padding:9px 4px;max-height:132px;line-height:1.5}
 #p::placeholder{color:var(--dm2)}
 .opt{display:flex;align-items:center;height:36px;padding:0 4px 0 10px;border-radius:11px;
-  background:var(--s1);border:1px solid var(--ln);color:var(--dm);font-size:12px;
-  font-weight:500;transition:.14s}
-.opt:hover{color:var(--tx);border-color:var(--ln2)}
+  background:var(--s1);border:1px solid var(--ln);color:var(--dm);font-size:12px;font-weight:500}
 .opt select{appearance:none;background:0;border:0;color:inherit;font:inherit;outline:0;
   cursor:pointer;padding:0 6px}
 .opt select option{background:#14141a;color:var(--tx)}
@@ -103,31 +115,26 @@ nav{display:flex;flex-direction:column;gap:1px}
 .send:hover:not(:disabled){filter:brightness(1.12)}
 .send:disabled{opacity:.35;cursor:not-allowed}
 .send svg{width:16px;height:16px;stroke:#fff;fill:none;stroke-width:2.2}
-.hint{text-align:center;font-size:11px;color:var(--dm2);margin-top:9px;
-  font-variant-numeric:tabular-nums;min-height:14px}
+.hint{text-align:center;font-size:11px;color:var(--dm2);margin-top:9px;min-height:14px;
+  font-variant-numeric:tabular-nums}
 
-/* reference popover, opens upward from the button */
-.pop{position:absolute;left:0;bottom:calc(100% + 9px);width:min(560px,100%);
-  background:rgba(18,18,24,.97);border:1px solid var(--ln2);border-radius:15px;padding:13px;
-  backdrop-filter:blur(24px);box-shadow:0 18px 50px rgba(0,0,0,.65);display:none;z-index:20}
-.pop.open{display:block}
-.pophead{display:flex;align-items:center;gap:9px;margin-bottom:10px}
-.pophead select{flex:1;background:var(--s1);border:1px solid var(--ln);border-radius:9px;
-  color:var(--tx);padding:7px 9px;font:inherit;font-size:12px;outline:0}
-.pophead select option{background:#14141a}
-.lk{background:0;border:0;color:var(--dm);font:inherit;font-size:11.5px;cursor:pointer;padding:4px}
-.lk:hover{color:var(--tx)}
-.strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:6px;
-  max-height:188px;overflow-y:auto}
-.th{aspect-ratio:16/9;border-radius:7px;overflow:hidden;cursor:pointer;border:2px solid transparent;
-  background:var(--s2);transition:.14s}
-.th img{width:100%;height:100%;object-fit:cover;display:block}
-.th:hover{border-color:var(--ln2)}
-.th.on{border-color:var(--ac2)}
-
-/* lightbox */
-.lb{position:fixed;inset:0;background:rgba(5,5,8,.94);backdrop-filter:blur(8px);
-  display:none;place-items:center;z-index:50;padding:36px;cursor:zoom-out}
+/* ---------- overlays ---------- */
+.drop{position:absolute;inset:0;z-index:40;display:none;place-items:center;
+  background:rgba(8,8,11,.86);backdrop-filter:blur(6px);border:2px dashed var(--ac2);border-radius:14px;margin:10px}
+.drop.on{display:grid}
+.drop div{text-align:center;color:var(--ac2);font-size:15px;font-weight:500}
+.menu{position:fixed;z-index:60;min-width:186px;background:rgba(20,20,26,.98);
+  border:1px solid var(--ln2);border-radius:11px;padding:5px;display:none;
+  box-shadow:0 14px 44px rgba(0,0,0,.7);backdrop-filter:blur(20px)}
+.menu.on{display:block}
+.mi{padding:8px 11px;border-radius:7px;font-size:12.5px;color:var(--tx);cursor:pointer;
+  display:flex;justify-content:space-between;gap:14px}
+.mi:hover{background:var(--s2)}
+.mi.dngr{color:#fca5a5}
+.mi span{color:var(--dm2);font-size:11px}
+.msep{height:1px;background:var(--ln);margin:4px 6px}
+.lb{position:fixed;inset:0;background:rgba(5,5,8,.94);backdrop-filter:blur(8px);display:none;
+  place-items:center;z-index:50;padding:36px;cursor:zoom-out}
 .lb.open{display:grid}
 .lb img{max-width:100%;max-height:100%;border-radius:11px}
 :focus-visible{outline:2px solid var(--ac2);outline-offset:2px}
@@ -139,40 +146,27 @@ nav{display:flex;flex-direction:column;gap:1px}
 <div class="app">
   <aside class="side">
     <div class="logo"><div class="mark"></div><h1>Studio</h1></div>
-    <nav>
-      <div class="nav on" data-v="all"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Shots</div>
-      <div class="nav" data-v="refs"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="m21 15-5-5L5 21"/></svg>Reference</div>
-    </nav>
-    <div class="cap">STYLE</div>
-    <div class="stylelist" id="styles"></div>
+    <button class="newbtn" id="newp">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New project</button>
+    <div class="cap">PROJECTS</div>
+    <div class="plist" id="plist"></div>
     <div class="grow"></div>
     <div class="stat"><span class="dot" id="dot"></span><span id="stat">connecting</span></div>
   </aside>
 
-  <main class="main">
-    <div class="feed" id="feed">
-      <div class="feedin" id="feedin">
-        <div class="blank"><div>
-          <h2>Every shot, <b>one style.</b></h2>
-          <p>Describe a beat below. The house style is already applied.</p>
-        </div></div>
-      </div>
+  <main class="main" id="main">
+    <div class="top">
+      <h2 id="pname">untitled</h2>
+      <div class="refrail" id="rail"></div>
+      <button class="addref" id="addref" title="Add reference images">
+        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <input type="file" id="file" accept="image/*" multiple hidden>
     </div>
 
-    <div class="dock"><div class="dockin">
-      <div class="pop" id="pop">
-        <div class="pophead">
-          <select id="video"></select>
-          <button class="lk" id="clr">clear</button>
-          <button class="lk" id="close">close</button>
-        </div>
-        <div class="strip" id="strip"></div>
-      </div>
+    <div class="feed" id="feed"><div class="feedin" id="feedin"></div></div>
 
+    <div class="dock"><div class="dockin">
       <div class="bar">
-        <button class="ib" id="refbtn" title="Reference frame" aria-label="Reference frame">
-          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="m21 15-5-5L5 21"/></svg>
-        </button>
         <textarea id="p" rows="1" placeholder="a stickman sweating beside a desk fan, blue airflow, red heat lines…"></textarea>
         <div class="opt"><select id="ratio">
           <option value="1024x576">16:9</option><option value="576x1024">9:16</option>
@@ -184,15 +178,23 @@ nav{display:flex;flex-direction:column;gap:1px}
       </div>
       <div class="hint" id="hint"></div>
     </div></div>
+
+    <div class="drop" id="drop"><div>Drop images to add as reference</div></div>
   </main>
 </div>
+
+<div class="menu" id="menu"></div>
 <div class="lb" id="lb"></div>
 
 <script>
 const $ = i => document.getElementById(i);
-let ref = null, preset = null, busy = false, shots = [];
 const api = (p,o) => fetch('/api'+p,o).then(r => r.ok ? r.json()
-  : r.json().then(e => Promise.reject(e.detail || r.statusText), () => Promise.reject(r.statusText)));
+  : r.json().then(e => Promise.reject(e.detail||r.statusText), () => Promise.reject(r.statusText)));
+const jpost = (p,b) => api(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+
+let project = localStorage.getItem('studio.project') || 'untitled';
+let picked = [];        // selected reference filenames, in click order
+let shots = [], busy = false;
 
 /* ---------- status ---------- */
 async function poll(){
@@ -202,77 +204,178 @@ async function poll(){
     $('dot').className = 'dot ' + (up ? 'ok' : '');
     $('stat').textContent = up
       ? [h.vram_free_gb ? h.vram_free_gb+' GB free' : null, s.n ? 'median '+s.median_s+'s' : null]
-          .filter(Boolean).join(' · ') || 'ready'
+        .filter(Boolean).join(' · ') || 'ready'
       : 'loading model…';
     $('go').disabled = !up || busy;
-  }catch{
-    $('dot').className='dot bad'; $('stat').textContent='server offline'; $('go').disabled=true;
-  }
+  }catch{ $('dot').className='dot bad'; $('stat').textContent='server offline'; $('go').disabled=true; }
 }
 
-/* ---------- init ---------- */
-async function init(){
-  const c = await api('/config');
-  $('styles').innerHTML = Object.keys(c.presets)
-    .map(k => `<div class="st" data-k="${k}"><i></i>${k}</div>`).join('');
-  $('styles').onclick = e => {
-    const el = e.target.closest('.st'); if(!el) return;
-    preset = preset === el.dataset.k ? null : el.dataset.k;
-    [...$('styles').children].forEach(x => x.classList.toggle('on', x.dataset.k === preset));
-  };
-  $('video').innerHTML = c.videos.map(v => `<option>${v}</option>`).join('');
-  $('video').onchange = loadRefs;
-  if(c.videos.length) loadRefs();
-  loadShots();
+/* ---------- projects ---------- */
+async function loadProjects(){
+  const {projects} = await api('/projects');
+  if(!projects.some(p => p.name === project)) project = projects[0].name;
+  $('plist').innerHTML = projects.map(p =>
+    `<div class="pj${p.name===project?' on':''}" data-n="${p.name}">
+       <span>${p.name}</span><b>${p.shots}</b></div>`).join('');
+  $('pname').textContent = project;
+  localStorage.setItem('studio.project', project);
 }
-
-async function loadRefs(){
-  const r = await api('/refs?video=' + encodeURIComponent($('video').value));
-  $('strip').innerHTML = r.refs.map(p =>
-    `<div class="th${p===ref?' on':''}" data-p="${p}"><img loading="lazy" src="/api/file?path=${encodeURIComponent(p)}" alt=""></div>`).join('');
-}
-$('strip').onclick = e => {
-  const t = e.target.closest('.th'); if(!t) return;
-  ref = ref === t.dataset.p ? null : t.dataset.p;
-  [...$('strip').children].forEach(x => x.classList.toggle('on', x.dataset.p === ref));
-  paintRef();
+$('plist').onclick = e => {
+  const el = e.target.closest('.pj'); if(!el) return;
+  project = el.dataset.n; picked = [];
+  loadProjects(); loadRefs(); loadShots();
 };
-const closePop = () => $('pop').classList.remove('open');
-$('refbtn').onclick = e => { e.stopPropagation(); $('pop').classList.toggle('open'); };
-$('close').onclick = closePop;
-$('clr').onclick = () => { ref=null; [...$('strip').children].forEach(x=>x.classList.remove('on')); paintRef(); };
-document.addEventListener('click', e => { if(!e.target.closest('.pop')) closePop(); });
+$('newp').onclick = async () => {
+  const name = prompt('Project name'); if(!name) return;
+  const r = await jpost('/projects',{name});
+  project = r.name; picked = [];
+  await loadProjects(); loadRefs(); loadShots();
+};
 
-function paintRef(){
-  const b = $('refbtn');
-  b.className = 'ib' + (ref ? ' has' : '');
-  b.innerHTML = ref ? `<img src="/api/file?path=${encodeURIComponent(ref)}" alt="">`
-    : `<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="m21 15-5-5L5 21"/></svg>`;
+/* ---------- references ---------- */
+async function loadRefs(){
+  const {refs} = await api('/refs?project=' + encodeURIComponent(project));
+  $('rail').innerHTML = refs.length
+    ? refs.map(n => {
+        const i = picked.indexOf(n);
+        return `<div class="rf${i>-1?' on':''}" data-n="${n}" title="${n}">
+          <img src="/api/img?kind=ref&project=${encodeURIComponent(project)}&name=${encodeURIComponent(n)}" alt="">
+          <span class="n">${i+1}</span></div>`;
+      }).join('')
+    : '<span class="emptyref">No references yet — drag images anywhere, or use +</span>';
 }
+$('rail').onclick = e => {
+  const el = e.target.closest('.rf'); if(!el) return;
+  const n = el.dataset.n, i = picked.indexOf(n);
+  if(i > -1) picked.splice(i,1); else picked.push(n);
+  loadRefs(); updateHint();
+};
+
+function updateHint(){
+  if(!picked.length) return $('hint').textContent = '';
+  const extra = picked.length > 2 ? ` — only the first 2 are sent (model limit)` : '';
+  $('hint').textContent = `${picked.length} reference${picked.length>1?'s':''} selected${extra}`;
+}
+
+/* upload: shared by drag-drop and the file picker */
+async function upload(files){
+  const list = [...files].filter(f => f.type.startsWith('image/'));
+  if(!list.length) return;
+  $('hint').textContent = `uploading ${list.length}…`;
+  for(const f of list){
+    const data = await new Promise(res => { const r = new FileReader();
+      r.onload = () => res(r.result); r.readAsDataURL(f); });
+    try{ await jpost('/upload',{project, name:f.name, data}); }
+    catch(e){ $('hint').textContent = String(e); }
+  }
+  $('hint').textContent = '';
+  loadRefs(); loadProjects();
+}
+$('addref').onclick = () => $('file').click();
+$('file').onchange = e => { upload(e.target.files); e.target.value=''; };
+
+let dragDepth = 0;
+const main = $('main');
+main.addEventListener('dragenter', e => { e.preventDefault(); if(++dragDepth===1) $('drop').classList.add('on'); });
+main.addEventListener('dragover',  e => e.preventDefault());
+main.addEventListener('dragleave', e => { if(--dragDepth<=0){ dragDepth=0; $('drop').classList.remove('on'); }});
+main.addEventListener('drop', e => {
+  e.preventDefault(); dragDepth=0; $('drop').classList.remove('on');
+  if(e.dataTransfer.files.length) upload(e.dataTransfer.files);
+});
 
 /* ---------- feed ---------- */
-async function loadShots(){ shots = (await api('/shots')).shots; render(); }
+async function loadShots(){ shots = (await api('/shots?project='+encodeURIComponent(project))).shots; render(); }
 
 function render(working, error){
   const f = $('feedin');
   if(!shots.length && !working && !error){
-    f.innerHTML = `<div class="blank"><div><h2>Every shot, <b>one style.</b></h2>
-      <p>Describe a beat below. The house style is already applied.</p></div></div>`;
+    f.innerHTML = `<div class="blank"><h2>Every shot, <b>one style.</b></h2>
+      <p>Describe a beat below. Drag images in to steer the look.</p></div>`;
     return;
   }
-  const cells = shots.map(n =>
-    `<div class="card" data-n="${n}"><img loading="lazy" src="/api/shot?name=${encodeURIComponent(n)}" alt="">
-     <span class="tag"><span>${n}</span></span></div>`);
+  const cells = shots.map(s =>
+    `<div class="card" data-n="${s.name}" data-p="${encodeURIComponent(s.prompt||'')}">
+      <img loading="lazy" src="/api/img?kind=shot&project=${encodeURIComponent(project)}&name=${encodeURIComponent(s.name)}" alt="">
+      <span class="tag">${s.prompt ? s.prompt : s.name}</span></div>`);
   if(working) cells.unshift(`<div class="working"><div class="muted"><div class="spin"></div><span id="el">0.0s</span></div></div>`);
-  f.innerHTML = (error ? `<div class="err">${error}</div>` : '') + `<div class="grid">${cells.join('')}</div>`;
+  f.innerHTML = (error?`<div class="err">${error}</div>`:'') + `<div class="grid">${cells.join('')}</div>`;
 }
 $('feedin').onclick = e => {
   const c = e.target.closest('.card'); if(!c) return;
-  $('lb').innerHTML = `<img src="/api/shot?name=${encodeURIComponent(c.dataset.n)}" alt="">`;
+  $('lb').innerHTML = `<img src="/api/img?kind=shot&project=${encodeURIComponent(project)}&name=${encodeURIComponent(c.dataset.n)}" alt="">`;
   $('lb').classList.add('open');
 };
 $('lb').onclick = () => $('lb').classList.remove('open');
-document.addEventListener('keydown', e => { if(e.key === 'Escape'){ $('lb').classList.remove('open'); closePop(); } });
+
+/* ---------- right-click menu ---------- */
+const menu = $('menu');
+function openMenu(x, y, items){
+  menu.innerHTML = items.map(i => i.sep ? '<div class="msep"></div>'
+    : `<div class="mi${i.dngr?' dngr':''}" data-a="${i.a}">${i.t}${i.k?`<span>${i.k}</span>`:''}</div>`).join('');
+  menu.style.left = Math.min(x, innerWidth-200) + 'px';
+  menu.style.top  = Math.min(y, innerHeight-190) + 'px';
+  menu.classList.add('on');
+}
+document.addEventListener('click', () => menu.classList.remove('on'));
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape'){ menu.classList.remove('on'); $('lb').classList.remove('open'); $('drop').classList.remove('on'); }
+});
+
+document.addEventListener('contextmenu', e => {
+  const card = e.target.closest('.card'), rf = e.target.closest('.rf');
+  if(!card && !rf) return;
+  e.preventDefault();
+  if(card){
+    menu.dataset.kind='shot'; menu.dataset.n=card.dataset.n; menu.dataset.p=card.dataset.p;
+    openMenu(e.clientX, e.clientY, [
+      {a:'addprompt', t:'Add prompt to composer'},
+      {a:'useref',    t:'Use as reference'},
+      {a:'copy',      t:'Copy prompt'},
+      {sep:1},
+      {a:'open',      t:'Open full size'},
+      {a:'del',       t:'Delete shot', dngr:1},
+    ]);
+  }else{
+    menu.dataset.kind='ref'; menu.dataset.n=rf.dataset.n; menu.dataset.p='';
+    openMenu(e.clientX, e.clientY, [
+      {a:'toggle', t: picked.includes(rf.dataset.n) ? 'Deselect' : 'Select as reference'},
+      {a:'only',   t:'Use only this'},
+      {sep:1},
+      {a:'del',    t:'Remove reference', dngr:1},
+    ]);
+  }
+});
+
+menu.onclick = async e => {
+  const mi = e.target.closest('.mi'); if(!mi) return;
+  const {a} = mi.dataset, kind = menu.dataset.kind, n = menu.dataset.n;
+  const promptText = decodeURIComponent(menu.dataset.p || '');
+  if(a==='addprompt' && promptText){
+    const ta=$('p'); ta.value = ta.value.trim() ? ta.value.trim()+' '+promptText : promptText;
+    ta.focus(); ta.dispatchEvent(new Event('input'));
+  }
+  if(a==='copy' && promptText) navigator.clipboard?.writeText(promptText);
+  if(a==='open'){
+    $('lb').innerHTML = `<img src="/api/img?kind=${kind}&project=${encodeURIComponent(project)}&name=${encodeURIComponent(n)}" alt="">`;
+    $('lb').classList.add('open');
+  }
+  if(a==='useref'){
+    // copy the generated shot into this project's references
+    const b = await fetch(`/api/img?kind=shot&project=${encodeURIComponent(project)}&name=${encodeURIComponent(n)}`).then(r=>r.blob());
+    const data = await new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result);r.readAsDataURL(b);});
+    await jpost('/upload',{project, name:n, data});
+    loadRefs();
+  }
+  if(a==='toggle'){ const i=picked.indexOf(n); i>-1?picked.splice(i,1):picked.push(n); loadRefs(); updateHint(); }
+  if(a==='only'){ picked=[n]; loadRefs(); updateHint(); }
+  if(a==='del'){
+    await fetch(`/api/img?kind=${kind}&project=${encodeURIComponent(project)}&name=${encodeURIComponent(n)}`,{method:'DELETE'});
+    picked = picked.filter(x=>x!==n);
+    loadRefs(); loadShots(); loadProjects(); updateHint();
+  }
+  menu.classList.remove('on');
+};
 
 /* ---------- generate ---------- */
 const ta = $('p');
@@ -282,31 +385,23 @@ ta.addEventListener('keydown', e => { if(e.key==='Enter' && !e.shiftKey){ e.prev
 $('go').onclick = async () => {
   const txt = ta.value.trim(); if(!txt) return ta.focus();
   const [w,h] = $('ratio').value.split('x').map(Number);
-  busy = true; $('go').disabled = true; closePop();
-  render(true);
+  busy = true; $('go').disabled = true; render(true);
   const t0 = Date.now();
-  const tick = setInterval(() => { const el=$('el'); if(el) el.textContent=((Date.now()-t0)/1000).toFixed(1)+'s'; }, 100);
+  const tick = setInterval(()=>{ const el=$('el'); if(el) el.textContent=((Date.now()-t0)/1000).toFixed(1)+'s'; },100);
   try{
-    const r = await api('/generate',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({prompt:txt,preset,width:w,height:h,steps:+$('steps').value,seed:-1,
-                           ref_paths: ref?[ref]:[]})});
-    $('hint').textContent = `${r.generate_s}s · seed ${r.seed}`;
+    const r = await jpost('/generate',{prompt:txt, project, width:w, height:h,
+      steps:+$('steps').value, seed:-1, ref_paths:picked});
+    $('hint').textContent = `${r.generate_s}s · seed ${r.seed}`
+      + (r.refs_dropped ? ` · ${r.refs_dropped} extra reference ignored (model takes 2)` : '');
     ta.value=''; ta.style.height='auto';
-    await loadShots();
+    await loadShots(); await loadProjects();
     $('feed').scrollTo({top:0,behavior:'smooth'});
-  }catch(e){
-    render(false, typeof e==='string' ? e : JSON.stringify(e));
-    $('hint').textContent='';
-  }finally{ clearInterval(tick); busy=false; $('go').disabled=false; }
+  }catch(e){ render(false, typeof e==='string'?e:JSON.stringify(e)); $('hint').textContent=''; }
+  finally{ clearInterval(tick); busy=false; $('go').disabled=false; }
 };
 
-document.querySelectorAll('.nav').forEach(n => n.onclick = () => {
-  document.querySelectorAll('.nav').forEach(x => x.classList.toggle('on', x===n));
-  if(n.dataset.v==='refs') $('pop').classList.add('open');
-  else { closePop(); $('feed').scrollTo({top:0,behavior:'smooth'}); }
-});
-
-init(); poll(); setInterval(poll, 5000);
+(async () => { await loadProjects(); loadRefs(); loadShots(); })();
+poll(); setInterval(poll, 5000);
 </script>
 </body>
 </html>
