@@ -30,7 +30,9 @@ body{background:var(--bg);color:var(--tx);overflow:hidden;
 .newbtn:hover{background:rgba(109,109,240,.16);border-color:var(--ac)}
 .newbtn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
 .cap{font-size:10.5px;font-weight:600;letter-spacing:.09em;color:var(--dm2);padding:20px 10px 7px}
-.plist{display:flex;flex-direction:column;gap:1px;overflow-y:auto;min-height:0}
+.plist{display:flex;flex-direction:column;gap:1px;overflow-y:auto;min-height:0;margin-top:14px}
+.pnew{width:100%;background:var(--s2);border:1px solid var(--ac);border-radius:8px;color:var(--tx);
+  font:inherit;font-size:13px;padding:8px 10px;outline:0}
 .pj{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;
   border-radius:8px;color:var(--dm);font-size:13px;cursor:pointer;transition:.14s;user-select:none}
 .pj:hover{color:var(--tx);background:var(--s1)}
@@ -191,7 +193,6 @@ body{background:var(--bg);color:var(--tx);overflow:hidden;
     <div class="logo"><div class="mark"></div><h1>Studio</h1></div>
     <button class="newbtn" id="newp">
       <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New project</button>
-    <div class="cap">PROJECTS</div>
     <div class="plist" id="plist"></div>
     <div class="grow"></div>
     <div class="stat"><span class="dot" id="dot"></span><span id="stat">connecting</span></div>
@@ -281,11 +282,22 @@ async function switchTo(name){
   await loadProjects(); paintAttach(); await loadShots();
 }
 $('plist').onclick = e => { const el = e.target.closest('.pj'); if(el) switchTo(el.dataset.n); };
-$('newp').onclick = async () => {
-  const name = prompt('Project name');
-  if(name === null) return;
-  const r = await jpost('/projects', {name: name.trim() || 'untitled'});
-  await switchTo(r.name);
+$('newp').onclick = () => {
+  if($('pnew')) return $('pnew').focus();
+  const box = document.createElement('input');
+  box.id = 'pnew'; box.className = 'pnew'; box.placeholder = 'Project name…';
+  $('plist').prepend(box); box.focus();
+  const done = async commit => {
+    const v = box.value.trim(); box.remove();
+    if(!commit || !v) return;
+    const r = await jpost('/projects', {name: v});
+    await switchTo(r.name);
+  };
+  box.onkeydown = e => {
+    if(e.key === 'Enter'){ e.preventDefault(); done(true); }
+    if(e.key === 'Escape'){ e.preventDefault(); done(false); }
+  };
+  box.onblur = () => done(true);
 };
 
 /* ---------- attachments (the reference mechanism) ---------- */
@@ -326,6 +338,9 @@ window.addEventListener('paste', e => { if(e.clipboardData?.files?.length) attac
 /* drag anywhere over the canvas */
 let depth = 0;
 const main = $('main');
+// A drop that misses the handler makes the browser open the file and blow away
+// the page, so swallow drops everywhere and only act on the ones over .main.
+['dragover','drop'].forEach(ev => window.addEventListener(ev, e => e.preventDefault()));
 ['dragenter','dragover'].forEach(ev => main.addEventListener(ev, e => {
   e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
   if(ev === 'dragenter' && ++depth === 1) $('drop').classList.add('on');
