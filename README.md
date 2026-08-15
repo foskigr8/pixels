@@ -1,4 +1,4 @@
-# Stickman
+# Studio
 
 Reference corpus and production setup for making [Whymentary](https://www.youtube.com/@Whymentary)-style
 stickman explainer videos: black monoline characters on a pure white canvas, filled with
@@ -19,9 +19,9 @@ all 6 published channel videos — which is what the generated shots are matched
 | [frames/](frames/) | 42 hand-picked keyframes, 7 per video, at the narrative beats the dissections cite by filename (`01_hook_10s.jpg`, `04_scientific_cross_section_120s.jpg`, …). |
 | [dense_frames/](dense_frames/) | 222 evenly-sampled frames, ~40 per video. Use these for motion and pacing questions the 7 keyframes can't answer. |
 | [transcripts/](transcripts/) | Verbatim `.vtt` subtitles with timestamps for all 6 videos. Pair with `dense_frames/` to see exactly which visual lands on which spoken clause. |
-| [notebooks/kaggle_vscode.ipynb](notebooks/kaggle_vscode.ipynb) | Boots the whole thing on Kaggle: weights, model server, Shot Factory UI, and VS Code. |
-| [scripts/krea_server.py](scripts/krea_server.py) | Warm Krea 2 model server. HTTP on `127.0.0.1:8711`. Holds the model, does the fp16 work and the dual-GPU split. |
-| [scripts/shot_ui.py](scripts/shot_ui.py) | The Shot Factory UI. Style presets, reference picker over `frames/`, palette, shot naming, live timing. |
+| [notebooks/studio.ipynb](notebooks/studio.ipynb) | Boots the whole thing on Kaggle: weights, model server, Studio UI, and VS Code. |
+| [scripts/server.py](scripts/server.py) | Warm Krea 2 model server. HTTP on `127.0.0.1:8711`. Holds the model, does the fp16 work and the dual-GPU split. |
+| [ui/index.html](ui/index.html) | The Studio UI. Style presets, reference picker over `frames/`, palette, shot naming, live timing. |
 | [shots/](shots/) | Generated output. Keepers go in `shots/final/`, which is the only part that's committed. |
 
 The palette, in short — everything else is in the dissections:
@@ -40,7 +40,7 @@ The palette, in short — everything else is in the dissections:
 
 Open `notebooks/kaggle_vscode.ipynb` on Kaggle with **Accelerator: GPU T4 x2** and
 **Internet: On**, then run the cells in order. You end up with two public HTTPS URLs:
-the **Shot Factory UI**, which is where the work happens, and **VS Code**, for editing
+the **Studio UI**, which is where the work happens, and **VS Code**, for editing
 prompts and scripts. Both go through cloudflared, no account needed.
 
 The UI is built for this pipeline rather than for generic image generation. The style

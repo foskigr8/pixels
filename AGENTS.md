@@ -52,17 +52,17 @@ match an existing look — it's far more reliable than describing the style in w
 
 ## Generating images
 
-Most of the time, use the **Shot Factory UI** (`scripts/shot_ui.py`, port 7860) — it
+Most of the time, use the **Studio UI** (same port as the API, 8711) — it
 applies the style clause, browses the reference corpus, and names shots for you.
 
 For scripted work, the model server is plain HTTP on `127.0.0.1:8711`. Not an MCP
 server, no special client — a POST from a terminal works.
 
 ```bash
-curl -s localhost:8711/health          # status, VRAM, what actually loaded
-curl -s localhost:8711/stats           # timing history — check before optimising
+curl -s localhost:8711/api/health          # status, VRAM, what actually loaded
+curl -s localhost:8711/api/stats           # timing history — check before optimising
 
-curl -s localhost:8711/generate -H 'Content-Type: application/json' -d '{
+curl -s localhost:8711/api/generate -H 'Content-Type: application/json' -d '{
   "prompt": "minimal hand-drawn stickman ... sweating beside a desk fan",
   "out_name": "shot_012.png",
   "ref_paths": ["frames/01_fan_death/01_hook_10s.jpg"],
