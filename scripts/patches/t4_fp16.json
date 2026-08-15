@@ -1,0 +1,67 @@
+{
+  "_readme": [
+    "fp16 patch table for Kaggle T4 x2 (Turing / SM75 -- no bf16 in hardware).",
+    "",
+    "Krea 2 ships bf16 weights and Wan2GP assumes bf16 in several loaders. On a T4",
+    "every bf16 tensor has to become fp16 before it reaches a kernel, or you get a",
+    "dtype-mismatch crash (most often when a reference image first hits the vision",
+    "tower, because that load path has no preprocess_sd of its own).",
+    "",
+    "These patches are scoped to the krea2 model files. Replacing torch.bfloat16",
+    "with torch.float16 inside them is safe here specifically because this GPU can",
+    "never use bf16 at all -- there is no case where the original was correct.",
+    "",
+    "IMPORTANT -- verify, then harden:",
+    "  1. Run:  python scripts/krea_server.py --probe",
+    "     It prints [matches] / [already applied] / [!! NO MATCH] per entry.",
+    "  2. Anything that says NO MATCH means upstream drifted. Open the file and",
+    "     fix the find string against your pinned WAN2GP_COMMIT.",
+    "  3. Once a patch matches on your pinned SHA, flip its \"required\" to true.",
+    "     After that, drift becomes a hard boot failure instead of a silent no-op.",
+    "",
+    "They ship with required=false so a first boot still comes up: krea_server.py's",
+    "post-load force_fp16_inplace() sweep catches whatever the patches miss. The",
+    "sweep is correct but slower, and its 'converted' count in the log tells you",
+    "how much the patches failed to cover.",
+    "",
+    "count -1 = replace every occurrence in that file."
+  ],
+  "patches": [
+    {
+      "name": "krea2_main bf16 -> fp16",
+      "file": "models/krea2/krea2_main.py",
+      "find": "torch.bfloat16",
+      "replace": "torch.float16",
+      "count": -1,
+      "required": false,
+      "why": "Main pipeline dtype: transformer, latents, and the noisy-token path."
+    },
+    {
+      "name": "krea2_handler bf16 -> fp16 (text encoder + vision tower)",
+      "file": "models/krea2/krea2_handler.py",
+      "find": "torch.bfloat16",
+      "replace": "torch.float16",
+      "count": -1,
+      "required": false,
+      "why": "Loads Qwen3-VL. The vision tower load has no preprocess_sd, so without this it stays bf16 and the first reference image crashes on dtype mismatch."
+    },
+    {
+      "name": "qwen text encoder bf16 -> fp16",
+      "file": "models/qwen/qwen_main.py",
+      "find": "torch.bfloat16",
+      "replace": "torch.float16",
+      "count": -1,
+      "required": false,
+      "why": "Krea 2's text encoder is Qwen3-VL-4B and reuses the shared qwen loader. This is the patch that had already stopped matching in the original notebook."
+    },
+    {
+      "name": "qwen VAE bf16 -> fp16",
+      "file": "models/qwen/qwen_handler.py",
+      "find": "torch.bfloat16",
+      "replace": "torch.float16",
+      "count": -1,
+      "required": false,
+      "why": "VAE decode runs after every generation; a bf16 VAE on Turing falls back to a slow emulated path or NaNs out."
+    }
+  ]
+}

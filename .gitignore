@@ -1,0 +1,42 @@
+# Generated shots are working files. Git keeps every version of every binary
+# forever, so 200 rejects at 1-3 MB each would bloat this repo permanently.
+# Move the keepers into shots/final/ -- those ARE committed.
+shots/**/*.png
+shots/**/*.jpg
+shots/**/*.jpeg
+shots/**/*.webp
+!shots/final/*.png
+!shots/final/*.jpg
+
+# Reference images are inputs and usually few, so they are tracked. If you start
+# accumulating dozens, uncomment these and use git-lfs instead.
+# refs/*.png
+# refs/*.jpg
+
+# Kaggle session artifacts -- none of this should ever be committed
+Wan2GP/
+models/
+*.safetensors
+*.gguf
+*.ckpt
+*.log
+/kaggle/
+
+# secrets
+.env
+*.pem
+mcp_settings.json
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# node / remotion, if you compile in this repo
+node_modules/
+out/
+build/
+
+.DS_Store
