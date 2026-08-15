@@ -343,6 +343,10 @@ class Wan2GPAdapter:
     def __init__(self) -> None:
         self.model = None
         self.pipe = None
+        # Set only at the very END of load(). self.model is assigned
+        # partway through, so using it as the readiness signal reports
+        # 'ready' while the mmgp profile and fp16 sweep are still running.
+        self.ready = False
         self.gen_fn = None
         self.gen_params: set[str] = set()
         self.accepts_kwargs = True
@@ -515,6 +519,7 @@ class Wan2GPAdapter:
             "generate_params": sorted(self.gen_params),
             "load_s": round(time.time() - t0, 1),
         }
+        self.ready = True
         log(f"[load] ready in {self.load_report['load_s']}s")
 
     def call_generate(self, wanted: dict[str, Any]) -> Any:
@@ -641,7 +646,7 @@ def health():
         f, t = torch.cuda.mem_get_info(0)
         free, used = round(f / 2**30, 2), round((t - f) / 2**30, 2)
     return {
-        "status": "ready" if ADAPTER.model is not None else "loading",
+        "status": "ready" if ADAPTER.ready else "loading",
         "model_type": MODEL_TYPE,
         "device": DEVICE,
         "edit_variant": MODEL_TYPE.endswith("_edit"),
@@ -674,7 +679,7 @@ def stats():
 def generate(req: GenRequest):
     import torch
 
-    if ADAPTER.model is None:
+    if not ADAPTER.ready:
         raise HTTPException(503, "model still loading -- poll /health")
 
     if req.width % 16 or req.height % 16:
@@ -763,6 +768,7 @@ def generate(req: GenRequest):
 def shutdown():
     import torch
 
+    ADAPTER.ready = False
     ADAPTER.model = None
     torch.cuda.empty_cache()
     return {"ok": True, "note": "model dropped; restart the server to reload"}
