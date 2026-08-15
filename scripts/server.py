@@ -20,10 +20,22 @@ Two things worth knowing before changing this file.
 2. Speed comes from mmgp, and mmgp is bounded by host RAM, not by the GPU.
    18 GB of weights stream through 30 GB of system RAM. If the pinned working
    set does not fit, mmgp silently drops to partial pinning and you lose async
-   transfers -- worth roughly 30s/image. The lever is perc_reserved_mem_max:
-   mmgp defaults to reserving 50% of system RAM (~16 GB of Kaggle's 31 GB)
-   while this model wants ~18.1 GB pinned. Watch the load log for "partial
+   transfers -- worth roughly 30s/image. Watch the load log for "partial
    pinning" -- if it is gone, the transfers are async and you are at speed.
+
+3. mmgp 3.7.12 is single-GPU by construction. Read its source: it hardcodes
+   `torch.cuda.get_device_properties(0)` for VRAM capacity, sets every hooked
+   model's `_force_device` to the bare string "cuda", and every weight transfer
+   is `p.to("cuda")` -- the *current* device. There is no device argument, no
+   device map, no per-model placement. So the only way to use the second T4 is
+   to keep a model OUT of the dict handed to offload.profile() and place it on
+   cuda:1 ourselves. Anything moved to cuda:1 *after* profile() is silently
+   dragged back to cuda:0 by the first gpu_load_blocks() call.
+
+   That is what gpu1_text_tower() does, and it fixes both problems at once:
+   the Qwen3-VL text+vision tower (~4.0 GB of the 18.1 GB pin requirement)
+   stops being mmgp's problem, which drops the requirement under the reservable
+   ceiling and restores FULL pinning, and GPU1 finally does real work.
 """
 
 from __future__ import annotations
@@ -59,21 +71,29 @@ TE_FILE = f"{TE_DIR}_quanto_bf16_int8.safetensors"
 BUDGETS = {"transformer": 11000, "text_encoder": 4000, "vae": 1500, "*": 800}
 
 # mmgp reserves at most perc_reserved_mem_max of system RAM for pinned weights.
-# At the 0.50 default that is ~16 GB of Kaggle's 31 GB, while this model needs
-# ~18.1 GB pinned -- so it falls back to PARTIAL pinning and loses async
-# transfers, which is most of the gap between ~25 s and ~55 s per image.
-# Raising it to 0.65 (~20 GB) covers the requirement. If the session starts
-# getting OOM-killed, lower it rather than turning pinning off.
+# VERIFIED against mmgp 3.7.12 source: offload.all() declares it as a real
+# keyword argument, and offload.profile() forwards every **overrideKwargs
+# straight into all(), so passing it to profile() is correct. At the 0.50
+# default the ceiling is ~16 GB of Kaggle's 31 GB. Belt-and-braces headroom on
+# top of the GPU1 split below. If the session gets OOM-killed, lower it.
+# (mmgp also reads a lowercase `perc_reserved_mem_max` OS env var as a
+# fallback, so `export perc_reserved_mem_max=0.65` is an equivalent lever.)
 PERC_RESERVED = float(os.environ.get("PERC_RESERVED_MEM", "0.65"))
 
-# Move the auxiliary towers to the second GPU. On by default because they run
-# once per image while the transformer runs every step, and because it takes
-# ~6 GB out of the host-RAM pinning requirement, which is the real bottleneck.
-# mmgp hooks the transformer, text encoder, VAE and vision encoder itself and
-# manages their placement. Moving them afterwards fights that, so this is off
-# by default -- PERC_RESERVED above is the lever that actually helps.
-SPLIT = os.environ.get("SPLIT_GPUS", "0") == "1"
-AUX = ("text_encoder", "vae", "vision_encoder", "vision_tower", "image_encoder")
+# Run the Qwen3-VL text+vision tower on the second T4 instead of streaming it
+# through GPU0. This is done by REMOVING it from the dict given to
+# offload.profile(), so mmgp never hooks it and never fights the placement --
+# see note 3 in the module docstring. Two wins: GPU1 stops being idle, and
+# mmgp's pin requirement drops by ~4.0 GB (3467 MB text_encoder + 577 MB
+# vision_encoder), which is what pushes it back under the reservable ceiling
+# and restores full pinning. Set SPLIT_GPUS=0 to fall back to single-GPU.
+SPLIT = os.environ.get("SPLIT_GPUS", "1") == "1"
+# Keys in Wan2GP's krea2 `pipe` dict that belong to that one tower object
+# (pipe["text_encoder"] is model.text_encoder.language_model and
+#  pipe["vision_encoder"] is model.text_encoder.visual -- both submodules of
+#  model.text_encoder, which is what we relocate). The VAE stays on GPU0: it is
+# small, it runs once, and its call sites take no device argument to hook.
+AUX = ("text_encoder", "vision_encoder")
 
 STYLE = ("minimal hand-drawn stickman on a pure white background, thick 6px solid "
          "black monoline ink strokes, flat saturated color fills, no gradients, "
@@ -191,48 +211,76 @@ def sweep_fp16(model) -> int:
     return n
 
 
-def split_gpus(model) -> dict:
-    """Put the auxiliary towers on GPU1 and bridge devices at their boundary."""
+def gpu1_text_tower(model, pipe: dict) -> dict:
+    """Pin the Qwen3-VL text+vision tower to GPU1. MUST run before offload.profile().
+
+    Mutates `pipe` in place, removing the entries mmgp would otherwise hook, so
+    that model stays entirely ours: mmgp never pins it to host RAM, never
+    streams it, and never rewrites its device.
+
+    The bridge is a one-line seam that Wan2GP already provides for us. The
+    conditioner's signature is
+
+        Qwen3VLConditioner.forward(self, text, device, images=None)
+
+    and everything it builds -- token ids, masks, position ids, pixel values --
+    is explicitly placed on that `device` argument. So passing cuda:1 moves the
+    whole encode onto GPU1 with no tensor-chasing. Results come back on their
+    own: the caller (Krea2Pipeline._encode_prompts) finishes with an explicit
+    `.to(device=<cuda:0>)` on the returned hiddens and masks, and the
+    TextEncoderCache stores on CPU and re-materialises on the device it was
+    handed. Nothing downstream ever sees a cuda:1 tensor.
+    """
     import torch
 
     if not SPLIT:
-        return {"enabled": False, "moved": []}
+        return {"enabled": False, "reason": "SPLIT_GPUS=0", "moved": []}
     if torch.cuda.device_count() < 2:
         return {"enabled": False, "reason": "one GPU", "moved": []}
 
-    def bridge(mod, dev, back):
-        if getattr(mod, "_bridged", False):
-            return
-        orig = mod.forward
+    # model is Wan2GP's krea2 `model_factory`. It exposes the tower directly as
+    # .text_encoder, but the conditioner that wraps it hangs off the inner
+    # Krea2Pipeline as .pipeline.encoder -- NOT .encoder. Check both so a
+    # refactor upstream degrades to single-GPU instead of crashing.
+    tower = getattr(model, "text_encoder", None)                    # Krea2TextEncoder
+    enc = getattr(getattr(model, "pipeline", None), "encoder", None)
+    if enc is None:
+        enc = getattr(model, "encoder", None)                       # Qwen3VLConditioner
+    if not isinstance(tower, torch.nn.Module) or enc is None or not callable(getattr(enc, "forward", None)):
+        return {"enabled": False, "reason": "krea2 pipeline shape changed", "moved": []}
+    if getattr(enc, "qwen", tower) is not tower:
+        return {"enabled": False, "reason": "conditioner wraps a different tower", "moved": []}
 
-        def move(x, t):
-            if isinstance(x, torch.Tensor):
-                return x.to(t, non_blocking=True)
-            if isinstance(x, (list, tuple)):
-                return type(x)(move(i, t) for i in x)
-            if isinstance(x, dict):
-                return {k: move(v, t) for k, v in x.items()}
-            return x
+    # Take them out of mmgp's hands first; put them back if anything goes wrong,
+    # because a half-applied split is worse than no split.
+    held = {k: pipe.pop(k) for k in AUX if k in pipe}
+    if not held:
+        return {"enabled": False, "reason": "no aux entries in pipe", "moved": []}
 
-        mod.forward = lambda *a, **k: move(orig(*move(a, dev), **move(k, dev)), back)
-        mod._bridged = True
+    try:
+        tower.to(DEVICE2)
+        if not getattr(enc, "_studio_on_gpu1", False):
+            orig = enc.forward
 
-    moved = []
-    for name in dir(model):
-        if not any(a in name.lower() for a in AUX):
-            continue
+            def encode_on_gpu1(text, device=None, images=None, **kw):
+                # torch.cuda.device() so that any bare .cuda()/"cuda" inside the
+                # tower resolves to GPU1 too -- mmgp leaves the global default
+                # device set to 'cuda', which is GPU0.
+                with torch.cuda.device(DEVICE2), torch.device(DEVICE2):
+                    return orig(text, device=DEVICE2, images=images, **kw)
+
+            enc.forward = encode_on_gpu1
+            enc._studio_on_gpu1 = True
+    except Exception as e:
+        pipe.update(held)
         try:
-            sub = getattr(model, name)
+            tower.to(DEVICE)
         except Exception:
-            continue
-        if isinstance(sub, torch.nn.Module):
-            try:
-                sub.to(DEVICE2)
-                bridge(sub, DEVICE2, DEVICE)
-                moved.append(name)
-            except Exception as e:
-                log(f"[split] {name} stayed put: {type(e).__name__}")
-    return {"enabled": True, "target": DEVICE2, "moved": moved}
+            pass
+        log(f"[split] failed ({type(e).__name__}: {e}) -- staying on one GPU")
+        return {"enabled": False, "reason": f"{type(e).__name__}", "moved": []}
+
+    return {"enabled": True, "target": DEVICE2, "moved": sorted(held)}
 
 
 def load() -> None:
@@ -262,19 +310,27 @@ def load() -> None:
         text_encoder_filename=te,
     )
 
+    # Order matters. The tower has to leave `pipe` BEFORE profile() runs, or
+    # mmgp hooks it, pins it, and owns its device for the rest of the process.
+    split = gpu1_text_tower(model, pipe)
+    if split["enabled"]:
+        log(f"[split] text tower -> {DEVICE2}, removed {split['moved']} from mmgp; "
+            "pin requirement should drop ~4.0 GB")
+    else:
+        log(f"[split] single-GPU ({split.get('reason')}) -- GPU1 will stay idle")
+
+    # mmgp resolves every weight transfer against the *current* CUDA device, so
+    # make sure that is GPU0 before it builds its streams and hooks.
+    torch.cuda.set_device(0)
+
     log(f"[load] mmgp budgets={BUDGETS}")
-    prof = dict(profile_no=2, quantizeTransformer=False,
-                convertWeightsFloatTo=torch.float16, pinnedMemory=True,
-                asyncTransfers=True, budgets=dict(BUDGETS))
-    try:
-        # mmgp names this parameter in its own "partial pinning" warning, but
-        # it has not always been a profile() kwarg -- fall back rather than die.
-        offload.profile(pipe, **prof, perc_reserved_mem_max=PERC_RESERVED)
-        log(f"[load] perc_reserved_mem_max={PERC_RESERVED}")
-    except TypeError as e:
-        log(f"[load] mmgp rejected perc_reserved_mem_max ({e}); using its default.")
-        log("[load] Expect 'partial pinning' and ~55s/image until this is set another way.")
-        offload.profile(pipe, **prof)
+    # perc_reserved_mem_max is a genuine offload.all() kwarg in 3.7.12 and
+    # profile() forwards **overrideKwargs into all() verbatim -- no fallback
+    # needed, and a TypeError here would mean the mmgp version changed.
+    offload.profile(pipe, profile_no=2, quantizeTransformer=False,
+                    convertWeightsFloatTo=torch.float16, pinnedMemory=True,
+                    asyncTransfers=True, budgets=dict(BUDGETS),
+                    perc_reserved_mem_max=PERC_RESERVED)
     offload.shared_state["_attention"] = "sdpa"
 
     try:
@@ -283,8 +339,8 @@ def load() -> None:
         cast = 0
         log(f"[fp16] sweep failed ({type(e).__name__}) -- continuing; "
             "the dtype= arguments and source patches already cover the load")
-    split = split_gpus(model)
-    log(f"[load] fp16 sweep cast {cast} tensors | split: {split.get('moved') or 'none'}")
+    log(f"[load] fp16 sweep cast {cast} tensors | perc_reserved_mem_max={PERC_RESERVED} "
+        f"| gpu1={split.get('moved') or 'none'}")
 
     torch.cuda.empty_cache()
     STATE["model"] = model
@@ -365,9 +421,18 @@ def config():
 def health():
     import torch
 
-    free = round(torch.cuda.mem_get_info(0)[0] / 2**30, 2) if torch.cuda.is_available() else None
+    free, per_gpu = None, []
+    if torch.cuda.is_available():
+        # per-GPU used, so you can see at a glance whether GPU1 is actually
+        # holding the text tower (~4 GB) or still sitting at ~0.
+        for i in range(torch.cuda.device_count()):
+            f, t = torch.cuda.mem_get_info(i)
+            per_gpu.append({"gpu": i, "free_gb": round(f / 2**30, 2),
+                            "used_gb": round((t - f) / 2**30, 2)})
+        free = per_gpu[0]["free_gb"]
     return {"status": "ready" if STATE["ready"] else "loading",
-            "vram_free_gb": free, "generated": len(HISTORY), **STATE["report"]}
+            "vram_free_gb": free, "gpus": per_gpu,
+            "generated": len(HISTORY), **STATE["report"]}
 
 
 @app.get("/api/stats")
@@ -492,6 +557,10 @@ def img(name: str, kind: str = "shot", project: str = "untitled"):
 
 @app.delete("/api/img")
 def delete(name: str, kind: str = "shot", project: str = "untitled"):
+    # The frames corpus is committed reference material, never deletable. Without
+    # this, a frame delete falls through and removes a same-named project ref.
+    if kind == "frame":
+        raise HTTPException(403, "corpus frames cannot be deleted")
     d = (pdirs(project)[0] if kind == "shot" else pdirs(project)[1]) / Path(name).name
     if d.is_file():
         d.unlink()
