@@ -38,71 +38,64 @@ The palette, in short — everything else is in the dissections:
 
 ## Running it on Kaggle
 
-Open `notebooks/kaggle_vscode.ipynb` on Kaggle with **Accelerator: GPU T4 x2** and
-**Internet: On**, then run the cells in order. You end up with two public HTTPS URLs:
-the **Studio UI**, which is where the work happens, and **VS Code**, for editing
-prompts and scripts. Both go through cloudflared, no account needed.
+Open [notebooks/studio.ipynb](notebooks/studio.ipynb) with **Accelerator: GPU T4 x2**
+and **Internet: On**, then run the cells top to bottom. Five steps: setup, weights,
+start, push, keepalive. You get two public HTTPS URLs — **Studio** and **VS Code** —
+both through cloudflared, no account needed.
 
-The UI is built for this pipeline rather than for generic image generation. The style
-clause is applied automatically so it can't drift between shots; references are picked
-from the committed `frames/` and `dense_frames/` corpus with thumbnails rather than
-uploaded by hand; the semantic palette is on screen; shots are named and filed into
-`shots/`; and median generation time is displayed while you work, so a speed regression
-is visible immediately instead of three sessions later.
+Change `PASSWORD` in cell 1 before running. The tunnel is public and that password is
+the only thing between it and a shell on your session.
 
-Everything needed to run or debug it lives in the notebook's own markdown cells,
-including a troubleshooting table — deliberately not duplicated here so there's one
-source of truth.
+First run downloads ~18 GB and takes roughly 20 minutes. Later runs in the same session
+are instant: every step checks disk before doing anything.
 
-Three things that will bite you if you skip them:
+The UI applies the style clause automatically so it can't drift between shots, picks
+references from the committed `frames/` corpus with thumbnails, files shots into
+`shots/`, and shows median generation time as you work.
 
-- **Run the benchmark cell.** It's the only thing that catches a silent regression from
-  20–46 s back to 60 s per image. See below for why that happens.
-- **Pin `WAN2GP_COMMIT`.** It starts as `"main"`. Cell 3 prints the resolved SHA; paste
-  it back into cell 2. Upstream moves, and the fp16 patches are string matches against it.
-- **Change `VSCODE_PASSWORD`.** The cloudflared tunnel is a public URL. The password is
-  the only thing between it and a shell on your session.
+### Speed
 
-### Speed: 20–46 s/image, not 60
+18 GB of weights do not fit in 16 GB of VRAM, so mmgp streams them from host RAM. That
+streaming — not compute — is the bottleneck. The compute floor at 1024×576 / 8 steps is
+roughly 18–22 s; a naive setup gives ~55–60 s.
 
-A naive setup gives ~60 s per image. The compute floor on one T4 at 1024×576 / 8 steps
-is roughly 18–22 s, so most of that 60 s isn't compute — it's mmgp thrashing weights
-between GPU0 and CPU, because **mmgp is single-GPU and GPU1 sits completely idle.**
+What moves the number:
 
-Three things close the gap, and all three are set explicitly in the notebook rather than
-left to defaults that could quietly change:
+1. **8 steps, guidance 0.0.** Turbo is distilled. Upstream defaults (28 steps,
+   guide_scale 4.5) are for the non-distilled model and cost ~3× for nothing.
+2. **int8 quantized weights** — half the volume for mmgp to move.
+3. **mmgp profile 2** with pinned memory, async transfers, per-component budgets,
+   and sdpa attention (the only backend that builds on SM75).
+4. **Text encoder and VAE on `cuda:1`.** The second GPU is otherwise idle. Beyond
+   freeing VRAM, this takes ~6 GB out of the *host RAM* pinning requirement, which is
+   what actually matters.
 
-1. **8 steps at 1024×576.** The model is turbo-distilled; more steps buy almost nothing.
-2. **int8 quantized weights** for the transformer and text encoder — half the weight
-   volume for mmgp to move.
-3. **Text encoder and VAE on `cuda:1`.** The big one, worth ~15–25 s/image. The
-   transformer stays on GPU0 because it runs on every step; the auxiliary towers run
-   once per image, so the PCIe hop costs far less than the offload thrash it removes.
+That last point is the one to watch. If the load log says:
 
-`krea_server.py` implements the split by wrapping each moved module's `forward` so
-inputs hop to `cuda:1` and outputs hop back — Wan2GP assumes one device throughout, and
-this avoids patching every call site. `/health` reports what actually moved. If
-`device_split.moved` is empty you are running single-GPU speeds; the attribute names in
-`AUX_PATTERNS` didn't match your build.
+```
+Switching to partial pinning since full requirements ... is 18107.2 MB
+  while estimated available reservable RAM is 16050.0 MB
+```
 
-What does *not* help, already ruled out: DDP, `device_map="auto"`, and PCIe
-tensor-parallel. Diffusion steps are sequential, so splitting one step across two T4s
-over PCIe is a net loss.
+then async transfers are effectively off and you are paying for it. `/api/health`
+reports `device_split.moved`; if that list is empty you are running single-GPU.
 
-### Why the fp16 machinery exists
+Budgets are capped by mmgp at 80% of VRAM (~11.9 GB on a T4), so setting a larger
+number is silently clamped.
 
-Kaggle's T4 is Turing (SM75), which has no bf16. Krea 2 ships bf16 weights and Wan2GP
-assumes bf16 in several places, so every bf16 tensor has to become fp16 before it reaches
-a kernel. `scripts/krea_server.py` does this twice over: string patches applied to the
-Wan2GP checkout before import (fast, but they drift with upstream), and a post-load sweep
-that casts anything the patches missed (slow, but depends on nothing upstream).
+Ruled out, don't retry: DDP, `device_map="auto"`, PCIe tensor-parallel. Diffusion steps
+are sequential, so splitting one step across two T4s over PCIe is a net loss.
 
-The sweep is the correctness guarantee; the patches are just an optimisation. So a
-`!! NO MATCH` warning means a slower load, not wrong output. The patch strings in
-`scripts/patches/t4_fp16.json` are **unverified templates** — run
-`python scripts/krea_server.py --probe` against your pinned checkout to check them, fix
-the find-strings, then flip `required` to `true` so a future drift fails loudly instead
-of silently costing you load time.
+### The fp16 machinery
+
+T4 is Turing (SM75) — no bf16 — and Krea ships bf16 weights. Two patches in
+[scripts/patches/t4_fp16.json](scripts/patches/t4_fp16.json) rewrite the Wan2GP loader
+before import, and a post-load sweep casts whatever they missed. The sweep depends on
+nothing upstream, so it is the correctness guarantee; the patches are the fast path.
+
+Two further patches are marked optional because `load_model` accepts `dtype` and
+`VAE_dtype` directly and we pass fp16 for both. The two required ones have no
+argument-level equivalent, so the server refuses to boot if they stop matching.
 
 ## What's deliberately not in the repo
 
