@@ -20,9 +20,10 @@ Two things worth knowing before changing this file.
 2. Speed comes from mmgp, and mmgp is bounded by host RAM, not by the GPU.
    18 GB of weights stream through 30 GB of system RAM. If the pinned working
    set does not fit, mmgp silently drops to partial pinning and you lose async
-   transfers -- worth ~30s/image. Putting the text encoder and VAE on the
-   second (otherwise idle) GPU is what keeps that working set small enough.
-   Watch the load log for "partial pinning"; that is the tell.
+   transfers -- worth roughly 30s/image. The lever is perc_reserved_mem_max:
+   mmgp defaults to reserving 50% of system RAM (~16 GB of Kaggle's 31 GB)
+   while this model wants ~18.1 GB pinned. Watch the load log for "partial
+   pinning" -- if it is gone, the transfers are async and you are at speed.
 """
 
 from __future__ import annotations
@@ -57,10 +58,21 @@ TE_FILE = f"{TE_DIR}_quanto_bf16_int8.safetensors"
 # larger number here is silently clamped and just prints a warning.
 BUDGETS = {"transformer": 11000, "text_encoder": 4000, "vae": 1500, "*": 800}
 
+# mmgp reserves at most perc_reserved_mem_max of system RAM for pinned weights.
+# At the 0.50 default that is ~16 GB of Kaggle's 31 GB, while this model needs
+# ~18.1 GB pinned -- so it falls back to PARTIAL pinning and loses async
+# transfers, which is most of the gap between ~25 s and ~55 s per image.
+# Raising it to 0.65 (~20 GB) covers the requirement. If the session starts
+# getting OOM-killed, lower it rather than turning pinning off.
+PERC_RESERVED = float(os.environ.get("PERC_RESERVED_MEM", "0.65"))
+
 # Move the auxiliary towers to the second GPU. On by default because they run
 # once per image while the transformer runs every step, and because it takes
 # ~6 GB out of the host-RAM pinning requirement, which is the real bottleneck.
-SPLIT = os.environ.get("SPLIT_GPUS", "1") == "1"
+# mmgp hooks the transformer, text encoder, VAE and vision encoder itself and
+# manages their placement. Moving them afterwards fights that, so this is off
+# by default -- PERC_RESERVED above is the lever that actually helps.
+SPLIT = os.environ.get("SPLIT_GPUS", "0") == "1"
 AUX = ("text_encoder", "vae", "vision_encoder", "vision_tower", "image_encoder")
 
 STYLE = ("minimal hand-drawn stickman on a pure white background, thick 6px solid "
@@ -119,26 +131,50 @@ def patch_source() -> dict:
     return {"applied": ok, "total": len(entries), "missing": missing}
 
 
+def _is_quantized(t) -> bool:
+    """True for quanto/GGUF-style packed weights.
+
+    These report their DEQUANTIZED dtype -- an int8 quanto weight says
+    `bfloat16` -- but raise "The dtype of a weights Tensor cannot be changed"
+    if you try to cast them. They are already the compact form we want, so
+    there is nothing to do; recognising them is purely about not touching them.
+    """
+    return "q" in type(t).__name__.lower() and hasattr(t, "__torch_dispatch__")
+
+
 def sweep_fp16(model) -> int:
-    """Cast any bf16 tensor the patches missed. Depends on nothing upstream."""
+    """Cast any bf16 tensor the patches missed.
+
+    Best-effort by design: this is the backstop behind the source patches and
+    the dtype= arguments, so a tensor it cannot convert is a skip, never a
+    failure. Letting it raise would abort a model that had already loaded.
+    """
     import torch
     import torch.nn as nn
 
-    n, seen = 0, set()
+    n, seen, skipped = 0, set(), 0
 
     def walk(o, d=0):
-        nonlocal n
+        nonlocal n, skipped
         if d > 4 or id(o) in seen:
             return
         seen.add(id(o))
         if isinstance(o, nn.Module):
             for m in o.modules():
                 for _, p in list(m.named_parameters(recurse=False)):
-                    if p.dtype is torch.bfloat16:
+                    if p.dtype is not torch.bfloat16 or _is_quantized(p.data):
+                        continue
+                    try:
                         p.data = p.data.to(torch.float16); n += 1
+                    except Exception:
+                        skipped += 1
                 for name, b in list(m.named_buffers(recurse=False)):
-                    if b.dtype is torch.bfloat16:
+                    if b.dtype is not torch.bfloat16 or _is_quantized(b):
+                        continue
+                    try:
                         setattr(m, name, b.to(torch.float16)); n += 1
+                    except Exception:
+                        skipped += 1
             return
         if isinstance(o, (list, tuple)):
             [walk(i, d + 1) for i in o]
@@ -148,6 +184,8 @@ def sweep_fp16(model) -> int:
             [walk(v, d + 1) for v in vars(o).values()]
 
     walk(model)
+    if skipped:
+        log(f"[fp16] {skipped} tensor(s) could not be cast (already quantized) -- fine")
     return n
 
 
@@ -223,12 +261,26 @@ def load() -> None:
     )
 
     log(f"[load] mmgp budgets={BUDGETS}")
-    offload.profile(pipe, profile_no=2, quantizeTransformer=False,
-                    convertWeightsFloatTo=torch.float16, pinnedMemory=True,
-                    asyncTransfers=True, budgets=dict(BUDGETS))
+    prof = dict(profile_no=2, quantizeTransformer=False,
+                convertWeightsFloatTo=torch.float16, pinnedMemory=True,
+                asyncTransfers=True, budgets=dict(BUDGETS))
+    try:
+        # mmgp names this parameter in its own "partial pinning" warning, but
+        # it has not always been a profile() kwarg -- fall back rather than die.
+        offload.profile(pipe, **prof, perc_reserved_mem_max=PERC_RESERVED)
+        log(f"[load] perc_reserved_mem_max={PERC_RESERVED}")
+    except TypeError as e:
+        log(f"[load] mmgp rejected perc_reserved_mem_max ({e}); using its default.")
+        log("[load] Expect 'partial pinning' and ~55s/image until this is set another way.")
+        offload.profile(pipe, **prof)
     offload.shared_state["_attention"] = "sdpa"
 
-    cast = sweep_fp16(model)
+    try:
+        cast = sweep_fp16(model)
+    except Exception as e:
+        cast = 0
+        log(f"[fp16] sweep failed ({type(e).__name__}) -- continuing; "
+            "the dtype= arguments and source patches already cover the load")
     split = split_gpus(model)
     log(f"[load] fp16 sweep cast {cast} tensors | split: {split.get('moved') or 'none'}")
 
