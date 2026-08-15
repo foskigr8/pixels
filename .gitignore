@@ -1,0 +1,39 @@
+# Local-only analysis inputs. The source videos are 58 MB and everything
+# useful was already extracted into frames/, dense_frames/ and transcripts/.
+videos/
+
+# Working notes from the extraction passes. Superseded by the dissection docs.
+scratch/
+
+# The one-off extraction/analysis scripts at the repo root. These were run
+# locally to PRODUCE the committed frames and transcripts; they are not part
+# of the production pipeline and depend on local ffmpeg/yt-dlp setup.
+# Note the leading slash: this only ignores the repo root, so scripts/*.py
+# (the Kaggle-side code) stays tracked.
+/*.py
+/*.sh
+
+# Generated shots. Keep the directory, ignore the churn, commit the keepers
+# by moving them into shots/final/.
+shots/*
+!shots/.gitkeep
+!shots/final/
+shots/final/*
+!shots/final/.gitkeep
+!shots/final/*.png
+!shots/final/*.jpg
+
+# Kaggle-side checkouts and weights. Never committed; the notebook rebuilds
+# them from a pinned SHA on every session.
+Wan2GP/
+ckpts/
+*.safetensors
+*.pth
+*.log
+
+# Python / Jupyter noise
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+.env

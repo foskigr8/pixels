@@ -1,0 +1,58 @@
+{
+  "_README": [
+    "fp16 patch table for running Krea 2 on a Kaggle T4 (Turing / SM75, no bf16).",
+    "",
+    "IMPORTANT: the find/replace strings below are UNVERIFIED templates. They were",
+    "written from notes, not from a checkout, so treat them as starting points.",
+    "This is safe: krea_server.py's post-load force_fp16_inplace() sweep casts any",
+    "bf16 tensor these patches miss, so a NO MATCH costs load time, not correctness.",
+    "",
+    "To verify and lock them in:",
+    "  1. python scripts/krea_server.py --probe     # prints per-patch match status",
+    "  2. fix any '!! NO MATCH' find-strings against your checkout",
+    "  3. set \"required\": true and fill in verified_against with the SHA",
+    "",
+    "Once required is true, the server refuses to boot on a NO MATCH, which is what",
+    "you want long-term: a silently no-op patch is the failure mode that wastes an",
+    "afternoon. Until then it warns and leans on the sweep."
+  ],
+  "verified_against": null,
+  "patches": [
+    {
+      "name": "text_encoder_dtype",
+      "file": "wgp.py",
+      "find": "torch.bfloat16",
+      "replace": "torch.float16",
+      "count": 1,
+      "required": false,
+      "note": "Text encoder load. Krea's T5/CLIP tower is the first thing to touch a kernel, so a bf16 miss here fails fast and loudly on T4."
+    },
+    {
+      "name": "transformer_dtype",
+      "file": "models/krea2/krea2_main.py",
+      "find": "dtype = torch.bfloat16",
+      "replace": "dtype = torch.float16",
+      "count": 1,
+      "required": false,
+      "note": "Main DiT/transformer dtype. Biggest single win: this is most of the weight volume, so patching it avoids a large late cast."
+    },
+    {
+      "name": "vae_dtype",
+      "file": "models/krea2/krea2_main.py",
+      "find": "vae_dtype = torch.bfloat16",
+      "replace": "vae_dtype = torch.float16",
+      "count": 1,
+      "required": false,
+      "note": "VAE decode dtype. A bf16 VAE on T4 typically surfaces as a dtype-mismatch at decode, i.e. after you already paid for the diffusion steps."
+    },
+    {
+      "name": "vision_tower_dtype",
+      "file": "models/krea2/krea2_handler.py",
+      "find": "torch.bfloat16",
+      "replace": "torch.float16",
+      "count": 1,
+      "required": false,
+      "note": "Vision encoder for reference images. This load path has no preprocess_sd hook, so it stays bf16 unless patched here or swept after load. Only matters for the _edit variants."
+    }
+  ]
+}
