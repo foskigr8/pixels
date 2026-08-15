@@ -52,8 +52,11 @@ match an existing look — it's far more reliable than describing the style in w
 
 ## Generating images
 
-The model server is HTTP on `127.0.0.1:8711`, started by the notebook. It is not an
-MCP server and needs no special client — plain POST works from a terminal or a script.
+Most of the time, use the **Shot Factory UI** (`scripts/shot_ui.py`, port 7860) — it
+applies the style clause, browses the reference corpus, and names shots for you.
+
+For scripted work, the model server is plain HTTP on `127.0.0.1:8711`. Not an MCP
+server, no special client — a POST from a terminal works.
 
 ```bash
 curl -s localhost:8711/health          # status, VRAM, what actually loaded
@@ -76,8 +79,10 @@ Things the API will reject, and why:
   `"I"` treats every reference as a subject, preserving aspect ratio. The mode string
   must contain `I` or references are silently ignored upstream — the server enforces this.
 
-Expect ~20–25 s per image at 1024x576 / 8 steps on a T4. If you're seeing much worse,
-check `/stats` before changing parameters.
+Expect **20–46 s** per image at 1024x576 / 8 steps. If you're seeing ~60 s, the
+dual-GPU split isn't active — check `device_split` in `/health` before touching any
+other parameter. That single setting is worth more than every prompt tweak combined;
+the README explains it.
 
 ## Conventions
 

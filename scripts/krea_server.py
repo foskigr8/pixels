@@ -212,6 +212,97 @@ def force_fp16_inplace(obj: Any) -> dict[str, int]:
 
 
 # ---------------------------------------------------------------------------
+# layer 3: dual-GPU split -- THE speed lever, not an optimisation to skip
+# ---------------------------------------------------------------------------
+#
+# Measured baseline was 60 s/image. The compute floor on one T4 at 1024x576 /
+# 8 steps is ~18-22 s, so most of that 60 s was not compute -- it was mmgp
+# thrashing weights between GPU0 and CPU because mmgp is single-GPU and GPU1
+# sits completely idle.
+#
+# Moving the text encoder and VAE to cuda:1 frees GPU0 for the transformer,
+# which is the only module that runs on every step. That is the documented
+# 60 s -> 35-45 s win; with 8 steps at 1024x576 it lands in the 20-46 s range.
+#
+# What does NOT help, and was already ruled out: DDP, device_map auto, and
+# PCIe tensor-parallel. Diffusion steps are sequential, so splitting a single
+# step across two T4s over PCIe is a net loss.
+
+SPLIT_DEVICES = os.environ.get("KREA_SPLIT_DEVICES", "1") == "1"
+SECOND_DEVICE = os.environ.get("KREA_SECOND_DEVICE", "cuda:1")
+
+# Auxiliary towers: each runs once per image, so the PCIe hop costs far less
+# than the offload thrash it removes. The transformer/DiT is deliberately
+# absent -- it runs every step and must stay on the primary device.
+AUX_PATTERNS = (
+    "text_encoder", "text_enc", "t5", "clip",
+    "vae", "vision_encoder", "vision_tower", "image_encoder",
+)
+
+
+def _wrap_forward_for_device(mod, dev: str, back: str) -> None:
+    """Let a module live on `dev` while its call sites still pass `back` tensors.
+
+    Wan2GP assumes one device throughout. Rather than patch every call site,
+    wrap forward so inputs hop to the module's device and outputs hop back.
+    """
+    import torch
+
+    if getattr(mod, "_krea_wrapped", False):
+        return
+    orig = mod.forward
+
+    def move(x, target):
+        if isinstance(x, torch.Tensor):
+            return x.to(target, non_blocking=True)
+        if isinstance(x, (list, tuple)):
+            return type(x)(move(i, target) for i in x)
+        if isinstance(x, dict):
+            return {k: move(v, target) for k, v in x.items()}
+        return x
+
+    def forward(*a, **kw):
+        return move(orig(*move(a, dev), **move(kw, dev)), back)
+
+    mod.forward = forward
+    mod._krea_wrapped = True
+
+
+def split_devices(model: Any) -> dict[str, Any]:
+    """Move the auxiliary towers to the second GPU. Returns what actually moved."""
+    import torch
+
+    if not SPLIT_DEVICES:
+        return {"enabled": False, "reason": "KREA_SPLIT_DEVICES=0", "moved": []}
+    if torch.cuda.device_count() < 2:
+        return {"enabled": False, "reason": "only one GPU visible", "moved": []}
+
+    moved, failed = [], []
+    for name in dir(model):
+        if name.startswith("__") or not any(p in name.lower() for p in AUX_PATTERNS):
+            continue
+        try:
+            sub = getattr(model, name)
+        except Exception:
+            continue
+        if not isinstance(sub, torch.nn.Module):
+            continue
+        try:
+            sub.to(SECOND_DEVICE)
+            _wrap_forward_for_device(sub, SECOND_DEVICE, DEVICE)
+            moved.append(name)
+        except Exception as e:
+            failed.append(f"{name}: {type(e).__name__}")
+
+    return {
+        "enabled": True,
+        "target": SECOND_DEVICE,
+        "moved": moved,
+        "failed": failed,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Wan2GP adapter -- everything upstream-specific lives here
 # ---------------------------------------------------------------------------
 
@@ -349,10 +440,23 @@ class Wan2GPAdapter:
             log("[load] !! large sweep count -- the source patches are probably not")
             log("[load] !! matching. Load is correct but slower than it should be.")
 
+        split = split_devices(self.model)
+        if split["enabled"]:
+            log(f"[split] moved to {split['target']}: {split['moved'] or 'NOTHING'}")
+            if split["failed"]:
+                log(f"[split] failed: {split['failed']}")
+            if not split["moved"]:
+                log("[split] !! nothing matched AUX_PATTERNS -- you are running")
+                log("[split] !! single-GPU and will see ~60s/image instead of 20-46s.")
+                log("[split] !! Run --probe and add the real attribute names.")
+        else:
+            log(f"[split] disabled ({split['reason']}) -- expect ~60s/image")
+
         torch.cuda.empty_cache()
         self.load_report = {
             "patches": patch_report,
             "fp16_sweep": sweep,
+            "device_split": split,
             "loader": loader_name,
             "generate": gen_name,
             "load_s": round(time.time() - t0, 1),
@@ -562,6 +666,14 @@ def generate(req: GenRequest):
             out = ADAPTER.call_generate(kwargs)
         except Exception as e:
             log("[gen] FAILED:\n" + traceback.format_exc())
+            # The dual-GPU split is the one change likely to surface as a device
+            # mismatch, so name it rather than making you guess.
+            if "device" in str(e).lower() and ADAPTER.load_report.get(
+                "device_split", {}
+            ).get("moved"):
+                log("[gen] !! looks like a cross-device error from the GPU split.")
+                log("[gen] !! Restart with KREA_SPLIT_DEVICES=0 to confirm, then")
+                log("[gen] !! narrow AUX_PATTERNS to the module that broke.")
             torch.cuda.empty_cache()
             raise HTTPException(500, f"{type(e).__name__}: {e}")
         generate_s = round(time.time() - t0, 1)
