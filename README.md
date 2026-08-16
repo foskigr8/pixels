@@ -6,9 +6,10 @@ flat saturated color that carries fixed meaning — red is heat and failure, gre
 biology, blue is water and cool. Mechanical metaphors for scientific concepts, and a
 visual beat every ~2 seconds.
 
-The engine is **Krea 2 Turbo Edit** running on a free Kaggle T4 x2, driven by a UI built
-for this pipeline. The repo also carries **the style bible** — frame-by-frame analysis of
-all 6 published channel videos — which is what the generated shots are matched against.
+The engine is **Krea 2 Turbo** (text-to-image only, no references/img2img) running on a
+free Kaggle T4 x2, driven by a UI built for this pipeline. The repo also carries
+**the style bible** — frame-by-frame analysis of all 6 published channel videos — which
+is what the generated shots are matched against.
 
 ## What's here
 
@@ -21,7 +22,7 @@ all 6 published channel videos — which is what the generated shots are matched
 | [transcripts/](transcripts/) | Verbatim `.vtt` subtitles with timestamps for all 6 videos. Pair with `dense_frames/` to see exactly which visual lands on which spoken clause. |
 | [notebooks/studio.ipynb](notebooks/studio.ipynb) | Boots the whole thing on Kaggle: weights, model server, Studio UI, and VS Code. |
 | [scripts/server.py](scripts/server.py) | Warm Krea 2 model server. HTTP on `127.0.0.1:8711`. Holds the model, does the fp16 work and the dual-GPU split. |
-| [ui/index.html](ui/index.html) | The Studio UI. Style presets, reference picker over `frames/`, palette, shot naming, live timing. |
+| [ui/index.html](ui/index.html) | The Studio UI. Style presets, palette, shot naming, live timing. Text prompt → shot. |
 | [shots/](shots/) | Generated output. Keepers go in `shots/final/`, which is the only part that's committed. |
 
 The palette, in short — everything else is in the dissections:
@@ -49,13 +50,11 @@ the only thing between it and a shell on your session.
 First run downloads ~18 GB and takes roughly 20 minutes. Later runs in the same session
 are instant: every step checks disk before doing anything.
 
-The UI applies the style clause automatically so it can't drift between shots, picks
-references from the committed `frames/` corpus with thumbnails, files shots into
-`shots/`, and shows median generation time as you work.
-
-Drop feedback is the composer's text prompt only — dragging a reference lights up
-the prompt box, never a full-screen overlay. The gallery still accepts a drop (a drop
-anywhere attaches the reference), it just doesn't announce it with a full-canvas panel.
+The workflow is deliberately single-path: type a beat, hit Generate, get a shot. The
+UI applies the style clause automatically so it can't drift between shots, files shots
+into `shots/`, and shows median generation time as you work. No reference slots, no
+image-to-image — the model is the plain Turbo, which is smaller and faster to load
+(no vision encoder) than the edit variant.
 
 ### Speed
 
@@ -90,16 +89,11 @@ the diagnosis a one-liner instead of reading logs:
 - The notebook's Start cell ends with a speed self-check that warns out loud if the
   split did not engage or pinning is partial, so a slow session explains itself
   before you start generating.
-- On boot the server runs a **self-test**: two tiny generations through the exact
-  `/api/generate` path — one text-only, one with a real corpus frame as the
-  reference — so the dual-GPU split and the img2img/reference path are *proven*
-  working (or loudly failed) before the UI is marked ready. It also warms the
-  transformer into VRAM, so the first real shot does not pay the cold-start cost.
-  Set `SELF_TEST=0` to skip it while iterating on load errors.
-
-Reference images are applied end to end: the UI reports "N reference(s) applied"
-after each shot, and a requested ref that is not on disk is a 400 instead of a
-silent text-only generation.
+- On boot the server runs a **self-test**: a tiny generation through the exact
+  `/api/generate` path, so the dual-GPU split is *proven* working (or loudly
+  failed) before the UI is marked ready. It also warms the transformer into
+  VRAM, so the first real shot does not pay the cold-start cost. Set
+  `SELF_TEST=0` to skip it while iterating on load errors.
 
 `device_split.moved` still tells you the raw split state; if that list is empty you
 are running single-GPU. If a session was started before the split commit and never

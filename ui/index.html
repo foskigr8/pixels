@@ -32,18 +32,11 @@ svg{display:block}
 .mark{width:22px;height:22px;border-radius:7px;background:linear-gradient(140deg,var(--ac2),var(--ac));
   box-shadow:0 0 16px rgba(124,108,240,.5);flex:none}
 .brand span{font-size:16px;font-weight:650;letter-spacing:-.01em}
-.nav{display:flex;flex-direction:column;gap:2px}
-.navi{display:flex;align-items:center;gap:11px;height:40px;padding:0 12px;border-radius:11px;
-  color:var(--dim);font-size:13.5px;font-weight:550;transition:.14s;text-align:left}
-.navi svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8;flex:none}
-.navi:hover{color:var(--tx);background:var(--panel)}
-.navi.on{color:var(--tx);background:var(--acdim)}
-.navi.on svg{stroke:var(--ac2)}
 
 .sidebottom{display:flex;flex-direction:column;gap:8px}
 .statuscard{display:flex;align-items:center;gap:9px;height:38px;padding:0 13px;border-radius:12px;
   background:var(--panel);border:1px solid var(--line);color:var(--dim);font-size:11.5px;
-  font-variant-numeric:tabular-nums}
+  font-variant-numeric:tabular-nums;max-width:100%;overflow:hidden;white-space:nowrap}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--dim2);flex:none}
 .dot.ok{background:var(--ok);box-shadow:0 0 8px var(--ok)}
 .dot.bad{background:var(--bad)}
@@ -110,30 +103,18 @@ svg{display:block}
 .sectionhead h2{font-size:15.5px;font-weight:650}
 .uline{width:32px;height:3px;border-radius:2px;margin-top:7px;
   background:linear-gradient(90deg,var(--ac2),var(--ac))}
-.modetoggle{display:flex;gap:2px;background:var(--panel2);border:1px solid var(--line);
-  border-radius:9px;padding:2px;margin-left:14px}
-.modetoggle button{padding:6px 13px;border-radius:7px;font-size:12px;font-weight:550;
-  color:var(--dim);transition:.14s}
-.modetoggle button:hover{color:var(--tx)}
-.modetoggle button.on{background:var(--panel);color:var(--tx)}
 .viewall{display:flex;align-items:center;gap:4px;margin-left:auto;color:var(--dim);
   font-size:12px;font-weight:550;transition:.14s}
 .viewall:hover{color:var(--ac2)}
 .viewall svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2.2}
-.addcard{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
-  border:1px dashed var(--line2);color:var(--dim2);background:var(--panel);cursor:pointer;width:100%}
-.addcard:hover{color:var(--ac2);border-color:var(--ac);background:var(--acdim)}
-.addcard .addicon{font-size:30px;line-height:1;font-weight:400}
-.addcard span:last-child{font-size:12px;font-weight:550}
 .blank{padding:14vh 0;text-align:center;color:var(--dim)}
 .blank p{font-size:14px;color:var(--dim)}
 .blank b{color:var(--tx);font-weight:600}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px}
-.card{position:relative;aspect-ratio:16/9;border-radius:16px;overflow:hidden;cursor:grab;
+.card{position:relative;aspect-ratio:16/9;border-radius:16px;overflow:hidden;cursor:pointer;
   background:var(--panel);border:1px solid var(--line);transition:.18s}
 .card img{width:100%;height:100%;object-fit:cover;display:block}
 .card:hover{border-color:var(--line2);transform:translateY(-2px);box-shadow:0 12px 32px rgba(0,0,0,.45)}
-.card.dragging{opacity:.35}
 .dots{position:absolute;top:9px;right:9px;width:28px;height:28px;border-radius:9px;display:grid;
   place-items:center;background:rgba(10,10,16,.72);border:1px solid var(--line2);color:var(--tx);
   backdrop-filter:blur(6px);opacity:0;transition:.15s}
@@ -165,35 +146,10 @@ svg{display:block}
   border:1px solid rgba(248,113,113,.25);padding:13px 15px;border-radius:12px;
   font-size:12.5px;white-space:pre-wrap}
 
-/* ---------- drop feedback ---------- */
-/* The drop target is the composer's text prompt -- the highlight appears only
-   around that input, never as a full-screen overlay over the gallery. */
-.dock.dragover{border-color:var(--ac);box-shadow:0 0 0 3px var(--acdim),0 20px 60px rgba(0,0,0,.35)}
-.dock.dragover #p{box-shadow:0 0 0 3px var(--acdim),0 0 0 1.5px var(--ac);
-  border-radius:12px;background:rgba(124,108,240,.08)}
-
 /* ---------- dock / composer ---------- */
 .dockwrap{flex:none;padding:0 26px 20px}
 .dock{max-width:1280px;margin:0 auto;background:var(--panel);border:1px solid var(--line2);
   border-radius:22px;padding:12px;box-shadow:0 20px 60px rgba(0,0,0,.35)}
-
-/* references — always visible, never a collapsing drawer */
-.refbar{display:flex;align-items:center;gap:12px;padding:9px 7px;margin-bottom:4px;
-  border-bottom:1px solid var(--line);flex-wrap:wrap}
-.refcap{font-size:10px;font-weight:700;letter-spacing:.14em;color:var(--dim2);flex:none}
-.refhint{font-size:11px;color:var(--dim2);margin-left:auto}
-.refslots{display:flex;gap:8px;align-items:center}
-.slot{position:relative;width:60px;height:60px;border-radius:12px;overflow:hidden;flex:none}
-.slot.empty{border:1px dashed var(--line2);background:var(--panel2);color:var(--dim2);transition:.14s}
-.slot.empty:hover{color:var(--ac2);border-color:var(--ac);background:var(--acdim)}
-.slot.empty .slotadd{width:100%;height:100%;display:grid;place-items:center;font-size:22px;line-height:1}
-.slot.filled{border:1px solid var(--line2);background:var(--panel2)}
-.slot.filled img{width:100%;height:100%;object-fit:cover;display:block;cursor:zoom-in}
-.slot .idx{position:absolute;left:3px;bottom:3px;font-size:8.5px;font-weight:700;color:#fff;
-  background:rgba(0,0,0,.7);border-radius:5px;padding:1px 4px}
-.slot .x{position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;
-  background:rgba(0,0,0,.75);color:#fff;font-size:11px;line-height:1;display:grid;place-items:center}
-.slot .x:hover{background:var(--bad)}
 
 /* prompt bar */
 .bar{display:flex;align-items:flex-end;gap:8px;padding:5px}
@@ -253,20 +209,13 @@ svg{display:block}
 .lbb{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 14px;border-radius:10px;
   font-size:12.5px;font-weight:600;border:1px solid var(--line2);background:var(--panel);transition:.13s}
 .lbb:hover{border-color:var(--ac);color:var(--tx)}
-.lbb.prim{background:var(--ac);border-color:var(--ac);color:#fff}
-.lbb.prim:hover{filter:brightness(1.12)}
 .lbb.dngr{color:#fca5a5}
 .lbb.dngr:hover{border-color:var(--bad);background:rgba(248,113,113,.1)}
 .lbb svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
 
-/* drag ghost */
-.ghost{position:fixed;top:-100px;left:-100px;padding:6px 12px;border-radius:9px;background:var(--ac);
-  color:#fff;font-size:12px;font-weight:600;pointer-events:none;z-index:200}
-
 @media(max-width:860px){
   .app{grid-template-columns:76px minmax(0,1fr)}
-  .brand span,.navi span,.projtext,.statuscard span:last-child{display:none}
-  .navi{justify-content:center;padding:0}
+  .brand span,.projtext,.statuscard span:last-child{display:none}
   .projcard{justify-content:center;padding:0;width:44px;height:44px}
   .projcard .caret{display:none}
   .statuscard{justify-content:center;width:44px;padding:0}
@@ -279,11 +228,6 @@ svg{display:block}
 <div class="app">
   <aside class="sidebar">
     <div class="brand"><div class="mark"></div><span>Studio</span></div>
-    <nav class="nav">
-      <button class="navi on" data-nav="create" data-mode="shots"><svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10"/></svg><span>Create</span></button>
-      <button class="navi" data-nav="creations" data-mode="shots"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg><span>My Creations</span></button>
-      <button class="navi" data-nav="explore" data-mode="refs"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m14.7 9.3-2 5.4-5.4 2 2-5.4z"/></svg><span>Explore</span></button>
-    </nav>
     <div class="grow"></div>
     <div class="sidebottom">
       <div class="statuscard"><span class="dot" id="dot"></span><span id="stat">connecting</span></div>
@@ -320,15 +264,11 @@ svg{display:block}
       <div class="feed" id="feed">
         <div class="feedin" id="feedin">
           <div class="hero">
-            <h1 id="herotitle">Turn your imagination into <b>stunning visuals.</b></h1>
-            <p id="herosub">Describe. Generate. Be inspired.</p>
+            <h1>Turn your imagination into <b>stunning visuals.</b></h1>
+            <p>Describe. Generate. Be inspired.</p>
           </div>
           <div class="sectionhead">
-            <div><h2 id="sectiontitle">My Creations</h2><div class="uline"></div></div>
-            <div class="modetoggle" id="modetoggle">
-              <button class="on" data-mode="shots">My Creations</button>
-              <button data-mode="refs">References</button>
-            </div>
+            <div><h2>My Creations</h2><div class="uline"></div></div>
             <button class="viewall" id="viewall">View all<svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>
           </div>
           <div id="gridwrap"></div>
@@ -338,11 +278,6 @@ svg{display:block}
 
     <footer class="dockwrap">
       <div class="dock" id="dock">
-        <div class="refbar">
-          <span class="refcap">References</span>
-          <div class="refslots" id="refslots"></div>
-          <span class="refhint" id="refhint">optional, up to 2 — style/composition guides for the next generation</span>
-        </div>
         <div class="bar">
           <textarea id="p" rows="1" placeholder="a stickman sweating beside a desk fan, blue airflow, red heat lines…"></textarea>
           <button class="ib" id="advbtn" title="Seed">
@@ -387,23 +322,19 @@ svg{display:block}
 
 <div class="menu" id="menu"></div>
 <div class="lb" id="lb"><div class="lbin" id="lbin"></div></div>
-<input type="file" id="file" accept="image/*" multiple hidden>
 
 <script>
 const $ = id => document.getElementById(id);
 const api = (p,o) => fetch('/api'+p,o).then(r => r.ok ? r.json()
   : r.json().then(e => Promise.reject(e.detail||r.statusText), () => Promise.reject(r.statusText)));
 const jpost = (p,b) => api(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
-const imgURL = (kind,name) => kind === 'frame'
-  ? `/api/img?kind=frame&name=${encodeURIComponent(name)}`
-  : `/api/img?kind=${kind}&project=${encodeURIComponent(project)}&name=${encodeURIComponent(name)}`;
+const imgURL = name => `/api/img?project=${encodeURIComponent(project)}&name=${encodeURIComponent(name)}`;
 const base = name => String(name).split('/').pop();
 
 let project = localStorage.getItem('studio.project') || 'untitled';
-let attached = [], shots = [], videos = [], railItems = [], busy = false;
+let shots = [], busy = false;
 let stylePreset = null, presets = {};
 let view = localStorage.getItem('studio.view') || 'grid';
-let mode = 'shots';                       // which collection the grid shows
 let query = '';                           // search filter
 let lastServerBusy = false;               // a generation running that this tab didn't start
 
@@ -430,9 +361,6 @@ async function poll(){
         lastServerBusy = true;
         $('hint').textContent = 'generating…';
       }
-      // Boot's first loadShots() renders the plain grid after the first poll
-      // has already flagged the in-flight generation, so re-apply the working
-      // tile whenever it is missing (not just once -- that race hides it).
       if(!document.querySelector('#gridwrap .working')) render(true);
       const el = $('el');
       if(el && h.generating) el.textContent = `${h.generating.elapsed_s}s (in progress)`;
@@ -462,10 +390,9 @@ async function loadProjects(){
   localStorage.setItem('studio.project', project);
 }
 async function switchTo(name){
-  project = name; attached = []; stylePreset = null; shots = [];
+  project = name; stylePreset = null; shots = [];
   $('p').value = ''; $('hint').textContent = ''; $('stylesel').value = '';
-  await Promise.all([loadProjects(), loadRefs()]);
-  paintAttach(); await loadShots();
+  await loadProjects(); await loadShots();
 }
 async function uniqueProjectName(){
   const {projects} = await api('/projects');
@@ -518,194 +445,33 @@ document.addEventListener('click', e => {
   if(!e.target.closest('.proj')) closeProjMenu();
 });
 
-/* ---------- reference images (frames corpus + uploaded refs) — shown in the
-   main "References" view, not a separate drawer ---------- */
-async function loadRefs(){
-  const [{videos: v}, {refs: r}] = await Promise.all([api('/frames'), api('/refs?project='+encodeURIComponent(project))]);
-  videos = v || [];
-  const items = [];
-  for(const vid of videos){
-    for(const f of vid.frames) items.push({kind:'frame', name:`${vid.video}/${f}`, label:f.replace(/\.\w+$/,'').replace(/^\d+_/,'')});
-  }
-  for(const f of r) items.push({kind:'ref', name:f, label:f.replace(/\.\w+$/,'')});
-  railItems = items;
-  if(mode === 'refs') render();
-}
-async function removeRef(name){
-  try{ await fetch(`/api/img?kind=ref&project=${encodeURIComponent(project)}&name=${encodeURIComponent(name)}`, {method:'DELETE'}); }
-  catch{}
-  attached = attached.filter(x => x !== name);
-  paintAttach(); loadRefs();
-}
-
-/* ---------- selection (attached references — 2 slots, max) ---------- */
-function paintAttach(){
-  $('refslots').innerHTML = [0, 1].map(i => {
-    const n = attached[i];
-    if(!n) return `<div class="slot empty" data-i="${i}"><button class="slotadd" data-upload title="Upload an image">+</button></div>`;
-    return `<div class="slot filled" data-i="${i}" title="${n}"><img src="${imgURL('ref',n)}" alt="" data-n="${n}">
-       <b class="idx">${i+1}</b><button class="x" data-x="${n}">&times;</button></div>`;
-  }).join('');
-}
-$('refslots').onclick = e => {
-  const x = e.target.closest('[data-x]');
-  if(x){ attached = attached.filter(n => n !== x.dataset.x); return paintAttach(); }
-  if(e.target.closest('[data-upload]')){ $('file').click(); return; }
-  const im = e.target.closest('img');
-  if(im) openLightbox('ref', im.dataset.n, '', im.dataset.n);
-};
-
-async function attach(files){
-  const list = [...files].filter(f => f.type.startsWith('image/'));
-  if(!list.length) return;
-  const room = 2 - attached.length;
-  if(room <= 0){ $('hint').textContent = '2 references already attached — remove one first'; return; }
-  const use = list.slice(0, room), dropped = list.length - use.length;
-  $('hint').textContent = `adding ${use.length} reference${use.length>1?'s':''}…`;
-  for(const f of use){
-    try{
-      const data = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(f); });
-      const {name} = await jpost('/upload', {project, name: f.name, data});
-      if(!attached.includes(name)) attached.push(name);
-    }catch(err){ $('hint').textContent = String(err); paintAttach(); return; }
-  }
-  $('hint').textContent = dropped ? `${dropped} extra image ignored — 2 references max` : '';
-  paintAttach(); loadRefs();
-}
-$('file').onchange = e => { attach(e.target.files); e.target.value = ''; };
-window.addEventListener('paste', e => { if(e.clipboardData?.files?.length) attach(e.clipboardData.files); });
-
-/* turn any image into a real reference: click, drag, or right-click */
-async function useAsRef(kind, name){
-  if(attached.length >= 2){ $('hint').textContent = '2 references already attached — remove one first'; return; }
-  // Already a stored ref image -- attach it directly instead of re-uploading
-  // a duplicate copy every time it's picked.
-  if(kind === 'ref'){
-    const n = base(name);
-    if(!attached.includes(n)) attached.push(n);
-    paintAttach();
-    $('hint').textContent = `${n} added as reference`;
-    return;
-  }
-  try{
-    const blob = await fetch(imgURL(kind,name)).then(r => r.blob());
-    const data = await new Promise(r => { const fr=new FileReader(); fr.onload=()=>r(fr.result); fr.readAsDataURL(blob); });
-    const up = await jpost('/upload', {project, name: base(name), data});
-    if(!attached.includes(up.name)) attached.push(up.name);
-    paintAttach();
-    $('hint').textContent = `${up.name} added as reference`;
-  }catch(err){ $('hint').textContent = String(err); }
-}
-
-/* ---------- drag & drop (shots, clips, files) ---------- */
-function setDrag(e, payload){
-  e.dataTransfer.setData('application/x-studio', JSON.stringify(payload));
-  e.dataTransfer.setData('text/plain', payload.name);
-  e.dataTransfer.effectAllowed = 'copy';
-  const ghost = document.createElement('div');
-  ghost.className = 'ghost'; ghost.textContent = 'add as reference';
-  document.body.appendChild(ghost);
-  e.dataTransfer.setDragImage(ghost, 40, 8);
-  requestAnimationFrame(() => ghost.remove());
-}
-['dragover','drop'].forEach(ev => window.addEventListener(ev, e => e.preventDefault()));
-// Each drop zone tracks its own enter/leave depth and highlights itself —
-// a shared counter/overlay made the hint appear over the gallery even while
-// dragging over the composer at the bottom.
-const dropDepths = new WeakMap();
-function isFileDrag(e){
-  const t = e.dataTransfer && e.dataTransfer.types;
-  return !!(t && [...t].includes('Files'));
-}
-// The visual highlight for a drop is the composer's text prompt only -- never
-// the whole canvas. The gallery still accepts drops (a drop anywhere attaches
-// the reference), but passes no highlight class so it stays out of the way.
-function wireDrop(el, opts = {}){
-  dropDepths.set(el, 0);
-  // undefined -> default 'dragover'; null -> no visual feedback
-  const clsFor = e => {
-    const v = isFileDrag(e) ? opts.fileClass : opts.cardClass;
-    return v === undefined ? 'dragover' : v;
-  };
-  ['dragenter','dragover'].forEach(ev => el.addEventListener(ev, e => {
-    e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
-    if(ev === 'dragenter'){
-      el.dataset.dropCls = clsFor(e);
-      const d = (dropDepths.get(el) || 0) + 1;
-      dropDepths.set(el, d);
-      if(d === 1 && el.dataset.dropCls) el.classList.add(el.dataset.dropCls);
-    }
-  }));
-  el.addEventListener('dragleave', () => {
-    const d = Math.max(0, (dropDepths.get(el) || 0) - 1);
-    dropDepths.set(el, d);
-    if(d === 0 && el.dataset.dropCls) el.classList.remove(el.dataset.dropCls);
-  });
-  el.addEventListener('drop', e => {
-    e.preventDefault(); dropDepths.set(el, 0); el.classList.remove('dragover');
-    let payload = null;
-    try{ payload = JSON.parse(e.dataTransfer.getData('application/x-studio') || 'null'); }catch{}
-    if(payload && payload.name) return useAsRef(payload.kind || 'shot', payload.name);
-    if(e.dataTransfer.files?.length) attach(e.dataTransfer.files);
-  });
-}
-wireDrop($('main'), {fileClass: null, cardClass: null});
-wireDrop($('dock'));
-
 /* ---------- gallery ---------- */
 async function loadShots(){
   shots = (await api('/shots?project='+encodeURIComponent(project))).shots;
   render();
 }
-function cardMenuItems(kind){
-  const items = [{a:'useref', t:'Use as reference'}];
-  if(kind === 'shot') items.push({a:'reuse', t:'Reuse prompt'});
-  items.push({sep:1}, {a:'download', t:'Download'}, {a:'open', t:'Open'});
-  if(kind !== 'frame') items.push({sep:1}, {a:'del', t:kind==='ref'?'Remove':'Delete', dngr:1});
-  return items;
-}
 function render(working, error){
   const f = $('gridwrap');
-  let items = mode === 'shots' ? shots
-    : railItems.map(it => ({kind: it.kind, name: it.name, prompt: it.label || ''}));
+  let items = shots;
   if(query){
     const q = query.toLowerCase();
     items = items.filter(s => (s.prompt || s.name).toLowerCase().includes(q));
   }
-  const addTile = `<button class="card addcard" id="addcard" title="Upload a reference image">
-      <span class="addicon">+</span><span>Upload image</span></button>`;
   if(!items.length && !working && !error){
-    if(query){ f.innerHTML = `<div class="blank"><p>No matches for <b>${query}</b>.</p></div>`; return; }
-    if(mode === 'refs'){ f.innerHTML = `<div class="grid ${view}">${addTile}</div>`; return; }
-    f.innerHTML = `<div class="blank"><p>No shots yet — describe a beat below to generate your first one.</p></div>`;
+    f.innerHTML = query
+      ? `<div class="blank"><p>No matches for <b>${query}</b>.</p></div>`
+      : `<div class="blank"><p>No shots yet — describe a beat below to generate your first one.</p></div>`;
     return;
   }
-  const cells = items.map(s => {
-    const k = mode === 'shots' ? 'shot' : s.kind;
-    return `<div class="card" data-k="${k}" data-n="${s.name}" data-p="${encodeURIComponent(s.prompt||'')}" draggable="true">
-       <img loading="lazy" src="${imgURL(k,s.name)}" alt="">
+  const cells = items.map(s =>
+    `<div class="card" data-n="${s.name}" data-p="${encodeURIComponent(s.prompt||'')}">
+       <img loading="lazy" src="${imgURL(s.name)}" alt="">
        <button class="dots" data-act="menu" title="More"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
        <span class="tag">${s.prompt || s.name}</span>
-       ${s.secs!=null?`<span class="secs">Generated in ${s.secs}s</span>`:''}</div>`;
-  });
-  if(mode === 'refs') cells.unshift(addTile);
+       ${s.secs!=null?`<span class="secs">Generated in ${s.secs}s</span>`:''}</div>`);
   if(working) cells.unshift(`<div class="working"><div class="muted"><div class="spin"></div><span id="el">0.0s</span></div></div>`);
   f.innerHTML = (error?`<div class="err">${error}</div>`:'') + `<div class="grid ${view}">${cells.join('')}</div>`;
 }
-function updateModeUI(){
-  const creating = mode === 'shots';
-  $('herotitle').innerHTML = creating
-    ? 'Turn your imagination into <b>stunning visuals.</b>'
-    : 'Browse and upload <b>reference images.</b>';
-  $('herosub').textContent = creating
-    ? 'Describe. Generate. Be inspired.'
-    : 'The committed style corpus plus anything you upload — click a card\'s ⋯ menu to use it as a reference.';
-  $('sectiontitle').textContent = creating ? 'My Creations' : 'References';
-  document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
-}
-document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => {
-  mode = b.dataset.mode; updateModeUI(); render();
-});
 $('viewall').onclick = () => {
   query = ''; $('search').value = ''; $('searchbox').classList.remove('filled');
   render();
@@ -727,65 +493,57 @@ $('viewbtn').onclick = () => {
   localStorage.setItem('studio.view', view);
   paintViewBtn(); render();
 };
-// Click a shot -> big preview. "..." -> menu. Drag to add as reference.
+// Click a shot -> big preview. "..." -> menu.
 $('gridwrap').onclick = e => {
-  if(e.target.closest('#addcard')){ $('file').click(); return; }
   const act = e.target.closest('[data-act="menu"]');
   const c = e.target.closest('.card');
   if(act && c){ e.stopPropagation();
-    const k = c.dataset.k || 'shot';
-    menu.dataset.kind = k; menu.dataset.n = c.dataset.n; menu.dataset.p = c.dataset.p;
+    menu.dataset.n = c.dataset.n; menu.dataset.p = c.dataset.p;
     const r = act.getBoundingClientRect();
-    openMenu(r.right - 4, r.bottom + 6, cardMenuItems(k));
+    openMenu(r.right - 4, r.bottom + 6, cardMenuItems());
     return; }
-  if(c) openLightbox(c.dataset.k || 'shot', c.dataset.n, c.dataset.p);
+  if(c) openLightbox(c.dataset.n, c.dataset.p);
 };
 $('gridwrap').ondblclick = e => {
-  if(e.target.closest('#addcard')) return;
-  const c = e.target.closest('.card'); if(c) openLightbox(c.dataset.k || 'shot', c.dataset.n, c.dataset.p);
+  const c = e.target.closest('.card'); if(c) openLightbox(c.dataset.n, c.dataset.p);
 };
-$('gridwrap').addEventListener('dragstart', e => {
-  const c = e.target.closest('.card'); if(!c || c.id === 'addcard') return;
-  setDrag(e, {kind: c.dataset.k || 'shot', name:c.dataset.n});
-  c.classList.add('dragging');
-});
-$('gridwrap').addEventListener('dragend', e => { const c = e.target.closest('.card'); if(c) c.classList.remove('dragging'); });
 
 /* ---------- lightbox (big preview) ---------- */
-function openLightbox(kind, name, promptText, title){
+function openLightbox(name, promptText){
   const s = shots.find(x => x.name === name) || {};
-  const pr = title || (promptText ? decodeURIComponent(promptText) : (s.prompt || ''));
+  const pr = promptText ? decodeURIComponent(promptText) : (s.prompt || '');
   const meta = [s.seed!=null?`seed ${s.seed}`:null, s.secs!=null?`${s.secs}s`:null].filter(Boolean).join(' · ');
-  const acts = [];
-  if(kind !== 'ref') acts.push(`<button class="lbb prim" data-a="useref"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Use as reference</button>`);
-  acts.push(`<a class="lbb" href="${imgURL(kind,name)}" download="${base(name)}"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12l7-7 7 7M5 21h14"/></svg>Download</a>`);
-  if(kind !== 'frame') acts.push(`<button class="lbb dngr" data-a="del"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>Delete</button>`);
+  const acts = `
+    <a class="lbb" href="${imgURL(name)}" download="${base(name)}"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12l7-7 7 7M5 21h14"/></svg>Download</a>
+    <button class="lbb dngr" data-a="del"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>Delete</button>`;
   $('lbin').innerHTML = `
-    <img class="lbimg" src="${imgURL(kind,name)}" alt="">
+    <img class="lbimg" src="${imgURL(name)}" alt="">
     <div class="lbcap">
       <h3>${base(name)}</h3>
       ${meta?`<div class="lmeta">${meta}</div>`:''}
       ${pr?`<div class="lprompt">${pr}</div>`:''}
-      <div class="lbacts">${acts.join('')}</div>
+      <div class="lbacts">${acts}</div>
     </div>`;
-  $('lb').dataset.kind = kind; $('lb').dataset.name = name;
+  $('lb').dataset.name = name;
   $('lb').classList.add('open');
 }
 $('lb').onclick = e => {
   if(e.target === $('lb') || e.target.classList.contains('lbimg')){ $('lb').classList.remove('open'); return; }
   const b = e.target.closest('[data-a]'); if(!b) return;
-  const kind = $('lb').dataset.kind, name = $('lb').dataset.name;
-  if(b.dataset.a === 'useref'){ useAsRef(kind, name); $('lb').classList.remove('open'); }
+  const name = $('lb').dataset.name;
   if(b.dataset.a === 'del'){
-    fetch(`/api/img?kind=${kind}&project=${encodeURIComponent(project)}&name=${encodeURIComponent(name)}`, {method:'DELETE'}).catch(()=>{});
-    attached = attached.filter(x => x !== name);
-    paintAttach(); loadShots(); loadRefs(); $('lb').classList.remove('open');
+    fetch(`/api/img?project=${encodeURIComponent(project)}&name=${encodeURIComponent(name)}`, {method:'DELETE'}).catch(()=>{});
+    $('lb').classList.remove('open');
+    loadShots();
   }
 };
 $('lbin').onclick = e => { if(e.target.closest('a')) e.stopPropagation(); };
 
 /* ---------- right-click menu ---------- */
 const menu = $('menu');
+function cardMenuItems(){
+  return [{a:'reuse', t:'Reuse prompt'}, {sep:1}, {a:'download', t:'Download'}, {a:'open', t:'Open'}, {sep:1}, {a:'del', t:'Delete', dngr:1}];
+}
 function openMenu(x, y, items){
   menu.innerHTML = items.map(i => i.sep ? '<div class="msep"></div>'
     : `<div class="mi${i.dngr?' dngr':''}" data-a="${i.a}">${i.t}${i.k?`<span>${i.k}</span>`:''}</div>`).join('');
@@ -798,35 +556,26 @@ document.addEventListener('keydown', e => {
   if(e.key === 'Escape'){ menu.classList.remove('on'); $('lb').classList.remove('open'); closeProjMenu(); }
 });
 document.addEventListener('contextmenu', e => {
-  const card = e.target.closest('.card'), slot = e.target.closest('.slot.filled');
-  if(!card && !slot) return;
+  const card = e.target.closest('.card');
+  if(!card) return;
   e.preventDefault();
-  if(card){
-    if(card.id === 'addcard') return;
-    menu.dataset.kind = card.dataset.k || 'shot'; menu.dataset.n=card.dataset.n; menu.dataset.p=card.dataset.p;
-    openMenu(e.clientX, e.clientY, cardMenuItems(card.dataset.k || 'shot'));
-  }else{
-    menu.dataset.kind='ref'; menu.dataset.n=slot.querySelector('img').dataset.n; menu.dataset.p='';
-    openMenu(e.clientX, e.clientY, [{a:'open', t:'Open'}, {a:'download', t:'Download'}, {sep:1}, {a:'detach', t:'Remove from shot', dngr:1}]);
-  }
+  menu.dataset.n = card.dataset.n; menu.dataset.p = card.dataset.p;
+  openMenu(e.clientX, e.clientY, cardMenuItems());
 });
 menu.onclick = async e => {
   const mi = e.target.closest('.mi'); if(!mi) return;
-  const a = mi.dataset.a, kind = menu.dataset.kind, n = menu.dataset.n;
+  const a = mi.dataset.a, n = menu.dataset.n;
   const pr = decodeURIComponent(menu.dataset.p||'');
   menu.classList.remove('on');
   if(a === 'reuse'){ const ta=$('p'); ta.value = pr; ta.focus(); ta.dispatchEvent(new Event('input')); return; }
-  if(a === 'open'){ return openLightbox(kind, n, pr); }
+  if(a === 'open'){ return openLightbox(n, pr); }
   if(a === 'download'){
     const link = document.createElement('a');
-    link.href = imgURL(kind,n); link.download = base(n); link.click(); return;
+    link.href = imgURL(n); link.download = base(n); link.click(); return;
   }
-  if(a === 'detach'){ attached = attached.filter(x => x !== n); return paintAttach(); }
-  if(a === 'useref'){ return useAsRef(kind, n); }
   if(a === 'del'){
-    await fetch(`/api/img?kind=${kind}&project=${encodeURIComponent(project)}&name=${encodeURIComponent(n)}`, {method:'DELETE'}).catch(()=>{});
-    attached = attached.filter(x => x !== n);
-    paintAttach(); loadShots(); loadRefs();
+    await fetch(`/api/img?project=${encodeURIComponent(project)}&name=${encodeURIComponent(n)}`, {method:'DELETE'}).catch(()=>{});
+    loadShots();
   }
 };
 
@@ -851,15 +600,9 @@ $('go').onclick = async () => {
   const tick = setInterval(()=>{ const el=$('el'); if(el) el.textContent=((Date.now()-t0)/1000).toFixed(1)+'s'; },100);
   try{
     const r = await jpost('/generate',{prompt:txt, project, preset:stylePreset, width:w, height:h,
-      steps:+$('steps').value, seed:seedVal?+seedVal:-1, ref_paths:attached});
-    $('hint').textContent = `${r.generate_s}s · seed ${r.seed}`
-      + (r.refs_used ? ` · ${r.refs_used} reference${r.refs_used>1?'s':''} applied` : '')
-      + (r.refs_dropped ? ` · ${r.refs_dropped} reference ignored (model takes 2)` : '');
+      steps:+$('steps').value, seed:seedVal?+seedVal:-1});
+    $('hint').textContent = `${r.generate_s}s · seed ${r.seed}`;
     ta.value=''; ta.style.height='auto';
-    // References are for this shot only — clear them once it's made instead of
-    // silently reusing the same refs on every generation after.
-    attached = []; paintAttach();
-    mode = 'shots'; updateModeUI();
     await loadShots();
     $('feed').scrollTo({top:0,behavior:'smooth'});
   }catch(e){ render(false, typeof e==='string'?e:JSON.stringify(e)); $('hint').textContent=''; }
@@ -872,8 +615,7 @@ $('go').onclick = async () => {
   $('stylesel').innerHTML = '<option value="">No style</option>'
     + Object.keys(presets).map(k => `<option value="${k}">${k}</option>`).join('');
   paintViewBtn();
-  updateModeUI();
-  await loadProjects(); await loadRefs(); paintAttach(); await loadShots();
+  await loadProjects(); await loadShots();
   poll();   // re-check after the first gallery render, so an in-flight
             // generation (returned mid-render) puts its working tile on top
 })();

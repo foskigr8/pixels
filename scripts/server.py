@@ -33,7 +33,7 @@ Two things worth knowing before changing this file.
    dragged back to cuda:0 by the first gpu_load_blocks() call.
 
    That is what gpu1_text_tower() does, and it fixes both problems at once:
-   the Qwen3-VL text+vision tower (~4.3 GB of the 18.1 GB pin requirement)
+   the Qwen3-VL text tower (~3.5 GB of the 18.1 GB pin requirement)
    stops being mmgp's problem, which drops the requirement under the reservable
    ceiling and restores FULL pinning, and GPU1 finally does real work.
 """
@@ -81,13 +81,11 @@ _restore_protobuf_getprototype()
 REPO = Path(os.environ.get("STUDIO_DIR", Path(__file__).resolve().parent.parent))
 WAN2GP = Path(os.environ.get("WAN2GP_DIR", "/kaggle/working/Wan2GP"))
 SHOTS = Path(os.environ.get("SHOTS_DIR", REPO / "shots"))
-REFS = REPO / "refs"
-FRAMES = REPO / "frames"
 UI = REPO / "ui"
 PATCHES = Path(__file__).resolve().parent / "patches" / "t4_fp16.json"
 
 HOST, PORT = os.environ.get("HOST", "0.0.0.0"), int(os.environ.get("PORT", "8711"))
-MODEL_TYPE = os.environ.get("MODEL_TYPE", "krea2_turbo_edit")
+MODEL_TYPE = os.environ.get("MODEL_TYPE", "krea2_turbo")
 DEVICE, DEVICE2 = os.environ.get("DEVICE", "cuda:0"), os.environ.get("DEVICE2", "cuda:1")
 
 TRANSFORMER = "Krea2Turbo_quanto_bf16_int8.safetensors"
@@ -114,20 +112,20 @@ BUDGETS = {"transformer": TRANSFORMER_BUDGET, "text_encoder": 4000, "vae": 1500,
 # fallback, so `export perc_reserved_mem_max=0.65` is an equivalent lever.)
 PERC_RESERVED = float(os.environ.get("PERC_RESERVED_MEM", "0.65"))
 
-# Run the Qwen3-VL text+vision tower on the second T4 instead of streaming it
-# through GPU0. This is done by REMOVING it from the dict given to
-# offload.profile(), so mmgp never hooks it and never fights the placement --
-# see note 3 in the module docstring. Two wins: GPU1 stops being idle, and
-# mmgp's pin requirement drops by ~4.3 GB (3467 MB text_encoder + 792 MB
-# vision_encoder), which is what pushes it back under the reservable ceiling
+# Run the Qwen3-VL text tower on the second T4 instead of streaming it through
+# GPU0. This is done by REMOVING it from the dict given to offload.profile(),
+# so mmgp never hooks it and never fights the placement -- see note 3 in the
+# module docstring. Two wins: GPU1 stops being idle, and mmgp's pin requirement
+# drops by ~3.5 GB, which is what pushes it back under the reservable ceiling
 # and restores full pinning. Set SPLIT_GPUS=0 to fall back to single-GPU.
 SPLIT = os.environ.get("SPLIT_GPUS", "1") == "1"
 # Keys in Wan2GP's krea2 `pipe` dict that belong to that one tower object
-# (pipe["text_encoder"] is model.text_encoder.language_model and
-#  pipe["vision_encoder"] is model.text_encoder.visual -- both submodules of
-#  model.text_encoder, which is what we relocate). The VAE stays on GPU0: it is
-# small, it runs once, and its call sites take no device argument to hook.
-AUX = ("text_encoder", "vision_encoder")
+# (pipe["text_encoder"] is model.text_encoder.language_model, a submodule of
+#  model.text_encoder, which is what we relocate). The plain krea2_turbo model
+# has no vision encoder -- that was the edit/reference variant. The VAE stays
+# on GPU0: it is small, it runs once, and its call sites take no device
+# argument to hook.
+AUX = ("text_encoder",)
 
 STYLE = ("minimal hand-drawn stickman on a pure white background, thick 6px solid "
          "black monoline ink strokes, flat saturated color fills, no gradients, "
@@ -248,19 +246,17 @@ def sweep_fp16(model) -> int:
 def self_test(model, split: dict) -> dict:
     """Prove the loaded pipeline works BEFORE the UI is told it is ready.
 
-    Runs two tiny generations through the exact path /api/generate uses -- one
-    text-only and one with a real corpus frame as the reference image -- so the
-    dual-GPU split and the img2img/reference path are verified at boot instead
-    of being discovered by the user's first shot. Each probe times a couple of
-    denoising steps, which also warms the transformer into VRAM so the first
-    real shot does not pay the cold-start cost.
+    Runs a tiny generation through the exact path /api/generate uses, so the
+    dual-GPU split is verified at boot instead of being discovered by the
+    user's first shot. The probe times a couple of denoising steps, which also
+    warms the transformer into VRAM so the first real shot does not pay the
+    cold-start cost.
 
     A failed probe is logged loudly but does not stop the server: a broken
     probe is better than a silent text-only generation later, and the health
     endpoint surfaces the verdict so a returning UI can see it.
     """
     import torch
-    from PIL import Image
 
     # Divisible by 16 (and by 32/64 for safety against the mmdit patch size)
     # so the pipeline's width%align check can never reject the probe.
@@ -278,56 +274,36 @@ def self_test(model, split: dict) -> dict:
     else:
         out["text_tower_device"] = "missing"
 
-    def probe(tag: str, **extra) -> None:
+    def probe() -> None:
         t0 = time.time()
         try:
             res = model.generate(
                 seed=7,
                 input_prompt="minimal hand-drawn stickman on a pure white background",
                 n_prompt="", sampling_steps=2, width=W, height=H, guide_scale=0.0,
-                batch_size=1, loras_slists={"phase1": []}, **extra)
-            out[tag] = {"ok": bool(res is not None), "s": round(time.time() - t0, 1)}
+                batch_size=1, loras_slists={"phase1": []})
+            out["ok"] = bool(res is not None)
+            out["s"] = round(time.time() - t0, 1)
         except Exception as e:
             torch.cuda.empty_cache()
-            out[tag] = {"ok": False, "s": round(time.time() - t0, 1),
-                        "error": f"{type(e).__name__}: {e}"}
+            out["ok"] = False
+            out["s"] = round(time.time() - t0, 1)
+            out["error"] = f"{type(e).__name__}: {e}"
         torch.cuda.empty_cache()
 
-    probe("text")
-    ref = None
-    if FRAMES.exists():
-        for d in sorted(FRAMES.iterdir()):
-            if not d.is_dir():
-                continue
-            for p in sorted(d.iterdir()):
-                if p.suffix.lower() in IMG_EXT:
-                    ref = Image.open(p).convert("RGB")
-                    break
-            if ref is not None:
-                break
-    if ref is not None:
-        probe("with_ref", input_ref_images=[ref], video_prompt_type="KI")
-    else:
-        out["with_ref"] = {"ok": None, "note": "no corpus frame found"}
-
-    out["ok"] = bool(out["text"].get("ok")) and bool(out["with_ref"].get("ok"))
+    probe()
     log(f"[selftest] text tower on {out.get('text_tower_device')} "
         f"({'GPU1' if out.get('on_gpu1') else 'GPU0/CPU'})")
-    log(f"[selftest] text-only probe {out['text'].get('s')}s -> "
-        f"{'OK' if out['text'].get('ok') else 'FAILED: ' + (out['text'].get('error') or '?')}")
-    if out["with_ref"].get("ok") is None:
-        log(f"[selftest] reference probe skipped ({out['with_ref'].get('note')})")
-    else:
-        log(f"[selftest] reference probe {out['with_ref'].get('s')}s -> "
-            f"{'OK' if out['with_ref'].get('ok') else 'FAILED: ' + (out['with_ref'].get('error') or '?')}")
+    log(f"[selftest] probe {out.get('s')}s -> "
+        f"{'OK' if out.get('ok') else 'FAILED: ' + (out.get('error') or '?')}")
     if not out["ok"]:
-        log("[selftest] !!! probe failed -- the dual-GPU split or reference path "
-            "is broken; the UI will show the verdict on /api/health")
+        log("[selftest] !!! probe failed -- the pipeline is broken; "
+            "the UI will show the verdict on /api/health")
     return out
 
 
 def gpu1_text_tower(model, pipe: dict) -> dict:
-    """Pin the Qwen3-VL text+vision tower to GPU1. MUST run before offload.profile().
+    """Pin the Qwen3-VL text tower to GPU1. MUST run before offload.profile().
 
     Mutates `pipe` in place, removing the entries mmgp would otherwise hook, so
     that model stays entirely ours: mmgp never pins it to host RAM, never
@@ -338,10 +314,10 @@ def gpu1_text_tower(model, pipe: dict) -> dict:
 
         Qwen3VLConditioner.forward(self, text, device, images=None)
 
-    and everything it builds -- token ids, masks, position ids, pixel values --
-    is explicitly placed on that `device` argument. So passing cuda:1 moves the
-    whole encode onto GPU1 with no tensor-chasing. Results come back on their
-    own: the caller (Krea2Pipeline._encode_prompts) finishes with an explicit
+    and everything it builds -- token ids, masks, position ids -- is explicitly
+    placed on that `device` argument. So passing cuda:1 moves the whole encode
+    onto GPU1 with no tensor-chasing. Results come back on their own: the
+    caller (Krea2Pipeline._encode_prompts) finishes with an explicit
     `.to(device=<cuda:0>)` on the returned hiddens and masks, and the
     TextEncoderCache stores on CPU and re-materialises on the device it was
     handed. Nothing downstream ever sees a cuda:1 tensor.
@@ -495,7 +471,6 @@ def load() -> None:
 # api
 # ---------------------------------------------------------------------------
 
-import base64  # noqa: E402
 import io  # noqa: E402
 import re  # noqa: E402
 
@@ -507,8 +482,6 @@ from pydantic import BaseModel  # noqa: E402
 app = FastAPI(title="studio")
 
 SAFE = re.compile(r"[^a-zA-Z0-9 _-]")
-IMG_EXT = (".jpg", ".jpeg", ".png", ".webp")
-MAX_UPLOAD = int(float(os.environ.get("MAX_UPLOAD_MB", "32")) * 2**20)
 # How many /api/generate calls may sit waiting on LOCK before we start refusing.
 # Requests block a thread from the (finite) request threadpool while they wait,
 # so an unbounded queue eventually starves /api/health and /api/shots -- exactly
@@ -573,21 +546,20 @@ def safe_file(name: str) -> str:
     return n
 
 
-def pdirs(project: str, create: bool = True) -> tuple[Path, Path]:
-    """(shots, refs) for a project. Created on demand unless create=False.
+def pdirs(project: str, create: bool = True) -> Path:
+    """Shots directory for a project. Created on demand unless create=False.
 
     Read endpoints pass create=False: a GET should never conjure a directory,
     or a typo'd project name litters the studio with empty projects.
     """
     p = slug(project)
-    a, b = SHOTS / p, REFS / p
+    a = SHOTS / p
     if create:
         try:
             a.mkdir(parents=True, exist_ok=True)
-            b.mkdir(parents=True, exist_ok=True)
         except OSError as e:
             raise HTTPException(500, f"could not create project directory: {e}")
-    return a, b
+    return a
 
 
 def _mtime(p: Path) -> float:
@@ -630,7 +602,6 @@ class Req(BaseModel):
     height: int = 576
     steps: int = 8
     seed: int = -1
-    ref_paths: list[str] = []
 
 
 class NewProject(BaseModel):
@@ -640,12 +611,6 @@ class NewProject(BaseModel):
 class Rename(BaseModel):
     project: str
     name: str
-
-
-class Upload(BaseModel):
-    project: str
-    name: str
-    data: str          # data: URL or bare base64
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -702,11 +667,10 @@ def health():
             speed = {"flag": "partial-pinning",
                      "msg": "text tower on GPU1 but host-RAM pinning is PARTIAL -- async transfers off, expect slow images"}
         elif selftest:
-            tt = selftest.get("text", {}).get("s")
-            rf = selftest.get("with_ref", {}).get("s")
+            ps = selftest.get("s")
             speed = {"flag": "ok",
                      "msg": f"verified: text tower on {split.get('target')}, pinning {pinning}; "
-                            f"probe text-only {tt}s / with-ref {rf}s "
+                            f"probe {ps}s "
                             f"(2 steps at {selftest.get('res')}) -- expect ~20-40 s/image at full res"}
         else:
             speed = {"flag": "ok",
@@ -738,11 +702,9 @@ def projects():
     for d in entries:
         if d.is_dir():
             out.append({"name": d.name,
-                        "shots": len(list(d.glob("*.png"))),
-                        "refs": len([p for p in (REFS / d.name).glob("*")
-                                     if p.suffix.lower() in IMG_EXT]) if (REFS / d.name).exists() else 0})
+                        "shots": len(list(d.glob("*.png")))})
     # No implicit project: an empty studio starts empty. Directories are created
-    # on first generate or upload, not on first page load.
+    # on first generate, not on first page load.
     return {"projects": out}
 
 
@@ -762,7 +724,7 @@ def rename_project(r: Rename):
         raise HTTPException(400, "name required")
     if base == old:
         return {"name": base}
-    if not (SHOTS / old).exists() and not (REFS / old).exists():
+    if not (SHOTS / old).exists():
         raise HTTPException(404, f"project '{old}' not found")
     with GEN_LOCK:
         if GEN["busy"] and GEN["project"] == old:
@@ -770,43 +732,21 @@ def rename_project(r: Rename):
                                      "rename it once the shot finishes")
     # keep the target free instead of overwriting
     new, i = base, 2
-    while (SHOTS / new).exists() or (REFS / new).exists():
+    while (SHOTS / new).exists():
         new = f"{base} {i}"
         i += 1
         if i > 999:
             raise HTTPException(409, f"too many projects named '{base}'")
-    done: list[tuple[Path, Path]] = []
     try:
-        for src, dst in ((SHOTS / old, SHOTS / new), (REFS / old, REFS / new)):
-            if src.exists():
-                os.replace(src, dst)
-                done.append((src, dst))
+        os.replace(SHOTS / old, SHOTS / new)
     except OSError as e:
-        for src, dst in reversed(done):   # half a rename is worse than none
-            try:
-                os.replace(dst, src)
-            except OSError:
-                pass
         raise HTTPException(500, f"rename failed: {e}")
     return {"name": new}
 
 
-@app.get("/api/frames")
-def frames():
-    """The committed style-reference corpus in frames/, grouped by video."""
-    if not FRAMES.exists():
-        return {"videos": []}
-    out = []
-    for d in sorted(p for p in FRAMES.iterdir() if p.is_dir()):
-        imgs = sorted(p.name for p in d.iterdir() if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp"))
-        if imgs:
-            out.append({"video": d.name, "frames": imgs})
-    return {"videos": out}
-
-
 @app.get("/api/shots")
 def shots(project: str = "untitled"):
-    d, _ = pdirs(project)
+    d = pdirs(project)
     ps = sorted(d.glob("*.png"), key=lambda p: _mtime(p), reverse=True)
     out = []
     for p in ps[:80]:
@@ -822,61 +762,19 @@ def shots(project: str = "untitled"):
     return {"shots": out}
 
 
-@app.get("/api/refs")
-def refs(project: str = "untitled"):
-    """A project's own reference images, newest first."""
-    _, d = pdirs(project)
-    ps = sorted((p for p in d.iterdir() if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")),
-                key=lambda p: _mtime(p), reverse=True)
-    return {"refs": [p.name for p in ps]}
-
-
-@app.post("/api/upload")
-def upload(u: Upload):
-    """Drag-and-drop target. Base64 in JSON, so no multipart dependency."""
-    _, d = pdirs(u.project)
-    raw = u.data.split(",", 1)[-1]
-    if len(raw) > MAX_UPLOAD * 4 // 3 + 16:
-        raise HTTPException(413, f"image too large (max {MAX_UPLOAD // 2**20} MB)")
-    try:
-        blob = base64.b64decode(raw)
-    except Exception:
-        raise HTTPException(400, "could not decode image data")
-    stem = slug(Path(u.name).stem) or "ref"
-    ext = (Path(u.name).suffix.lower() or ".png")[:8]
-    if ext not in (".jpg", ".jpeg", ".png", ".webp"):
-        raise HTTPException(400, f"unsupported file type {ext}")
-    out = d / f"{stem}{ext}"
-    i = 1
-    while out.exists():
-        out = d / f"{stem}_{i}{ext}"
-        i += 1
-    atomic_write(out, blob)
-    return {"name": out.name}
-
-
 @app.get("/api/img")
-def img(name: str, kind: str = "shot", project: str = "untitled"):
-    if kind == "frame":
-        cand = (FRAMES / name).resolve()
-        if FRAMES.resolve() in cand.parents and cand.is_file():
-            return FileResponse(cand)
-        raise HTTPException(404, "not found")
+def img(name: str, project: str = "untitled"):
     f = safe_file(name)
-    d = (pdirs(project)[0] if kind == "shot" else pdirs(project)[1]) / f
+    d = pdirs(project) / f
     if not d.is_file():
         raise HTTPException(404, "not found")
     return FileResponse(d)
 
 
 @app.delete("/api/img")
-def delete(name: str, kind: str = "shot", project: str = "untitled"):
-    # The frames corpus is committed reference material, never deletable. Without
-    # this, a frame delete falls through and removes a same-named project ref.
-    if kind == "frame":
-        raise HTTPException(403, "corpus frames cannot be deleted")
+def delete(name: str, project: str = "untitled"):
     f = safe_file(name)
-    d = (pdirs(project)[0] if kind == "shot" else pdirs(project)[1]) / f
+    d = pdirs(project) / f
     if d.is_file():
         d.unlink()
         d.with_suffix(".json").unlink(missing_ok=True)
@@ -893,7 +791,7 @@ def generate(r: Req):
     if r.width % 16 or r.height % 16:
         raise HTTPException(400, "width and height must be divisible by 16")
 
-    shots_dir, refs_dir = pdirs(r.project)
+    shots_dir = pdirs(r.project)
     # Send the prompt as written. Nothing is prepended, ever -- a house style
     # baked in here silently overrides what you asked for ("a Ferrari" came
     # back as a stickman). A preset is appended ONLY when you pick one.
@@ -902,31 +800,9 @@ def generate(r: Req):
         prompt = f"{prompt}. {PRESETS[r.preset]}"
     seed = r.seed if r.seed >= 0 else int(time.time() * 1000) % (2**31)
 
-    # Wan2GP accepts at most 2 reference images; more are dropped upstream
-    # without a word, so cap here and say so in the response. A requested ref
-    # that is NOT on disk is an error, never a silent text-only generation:
-    # the UI uploads every ref before attaching it, so a miss means the file
-    # went away and the user should hear about it instead of wondering why the
-    # output ignores the image they picked.
-    wanted = r.ref_paths[:]
-    used = wanted[:2]
-    imgs, missing = [], []
-    for n in used:
-        p = refs_dir / Path(n).name
-        if p.is_file():
-            imgs.append(Image.open(p).convert("RGB"))
-        else:
-            missing.append(Path(n).name)
-    if missing:
-        raise HTTPException(400, "reference image(s) not found in this project: "
-                                 + ", ".join(missing))
-
     kw = dict(seed=seed, input_prompt=prompt, n_prompt=(r.negative or None), sampling_steps=r.steps,
               width=r.width, height=r.height, guide_scale=0.0, batch_size=1,
               loras_slists={"phase1": []})
-    if imgs:
-        kw["input_ref_images"] = imgs
-        kw["video_prompt_type"] = "KI"   # must contain "I" or refs are ignored
 
     # Announce the job before waiting on LOCK so a UI that reloads mid-render
     # can see the work is still in flight (health.busy) instead of assuming it
@@ -971,7 +847,7 @@ def generate(r: Req):
             atomic_write(shots_dir / name, buf.getvalue())
             atomic_write((shots_dir / name).with_suffix(".json"),
                          json.dumps({"prompt": r.prompt.strip(), "seed": seed, "steps": r.steps,
-                                     "generate_s": secs, "refs": used}).encode())
+                                     "generate_s": secs}).encode())
             torch.cuda.empty_cache()
     finally:
         with GEN_LOCK:
@@ -979,10 +855,9 @@ def generate(r: Req):
             GEN["started"] = 0.0
             GEN["waiting"] = max(0, GEN["waiting"] - 1)
 
-    rec = {"name": name, "generate_s": secs, "seed": seed, "project": slug(r.project),
-           "refs_used": len(imgs), "refs_dropped": max(0, len(wanted) - 2)}
+    rec = {"name": name, "generate_s": secs, "seed": seed, "project": slug(r.project)}
     HISTORY.append(rec)
-    log(f"[gen] {slug(r.project)}/{name} {secs}s seed={seed} refs={len(imgs)}")
+    log(f"[gen] {slug(r.project)}/{name} {secs}s seed={seed}")
     return rec
 
 
