@@ -33,7 +33,7 @@ Two things worth knowing before changing this file.
    dragged back to cuda:0 by the first gpu_load_blocks() call.
 
    That is what gpu1_text_tower() does, and it fixes both problems at once:
-   the Qwen3-VL text+vision tower (~4.0 GB of the 18.1 GB pin requirement)
+   the Qwen3-VL text+vision tower (~4.3 GB of the 18.1 GB pin requirement)
    stops being mmgp's problem, which drops the requirement under the reservable
    ceiling and restores FULL pinning, and GPU1 finally does real work.
 """
@@ -66,9 +66,15 @@ TRANSFORMER = "Krea2Turbo_quanto_bf16_int8.safetensors"
 TE_DIR = "Qwen3-VL-4B-Instruct"
 TE_FILE = f"{TE_DIR}_quanto_bf16_int8.safetensors"
 
-# mmgp caps any single budget at 80% of VRAM (~11.9 GB on a 16 GB T4), so a
+# Transformer budget is exposed so a session with VRAM headroom can push it up
+# toward the model size (12,863 MiB at int8) to keep more of it resident and
+# shave a few seconds per image. The 0.8*VRAM cap (~13,107 MiB) is mmgp's own
+# safety ceiling and clamps anything above it. The default 11000 leaves room
+# for activations; raising it risks CUDA OOM if activations spill.
+TRANSFORMER_BUDGET = int(os.environ.get("TRANSFORMER_BUDGET_MB", "11000"))
+# mmgp caps any single budget at 80% of VRAM (~12.8 GiB on a 16 GiB T4), so a
 # larger number here is silently clamped and just prints a warning.
-BUDGETS = {"transformer": 11000, "text_encoder": 4000, "vae": 1500, "*": 800}
+BUDGETS = {"transformer": TRANSFORMER_BUDGET, "text_encoder": 4000, "vae": 1500, "*": 800}
 
 # mmgp reserves at most perc_reserved_mem_max of system RAM for pinned weights.
 # VERIFIED against mmgp 3.7.12 source: offload.all() declares it as a real
@@ -84,7 +90,7 @@ PERC_RESERVED = float(os.environ.get("PERC_RESERVED_MEM", "0.65"))
 # through GPU0. This is done by REMOVING it from the dict given to
 # offload.profile(), so mmgp never hooks it and never fights the placement --
 # see note 3 in the module docstring. Two wins: GPU1 stops being idle, and
-# mmgp's pin requirement drops by ~4.0 GB (3467 MB text_encoder + 577 MB
+# mmgp's pin requirement drops by ~4.3 GB (3467 MB text_encoder + 792 MB
 # vision_encoder), which is what pushes it back under the reservable ceiling
 # and restores full pinning. Set SPLIT_GPUS=0 to fall back to single-GPU.
 SPLIT = os.environ.get("SPLIT_GPUS", "1") == "1"
@@ -211,6 +217,87 @@ def sweep_fp16(model) -> int:
     return n
 
 
+def self_test(model, split: dict) -> dict:
+    """Prove the loaded pipeline works BEFORE the UI is told it is ready.
+
+    Runs two tiny generations through the exact path /api/generate uses -- one
+    text-only and one with a real corpus frame as the reference image -- so the
+    dual-GPU split and the img2img/reference path are verified at boot instead
+    of being discovered by the user's first shot. Each probe times a couple of
+    denoising steps, which also warms the transformer into VRAM so the first
+    real shot does not pay the cold-start cost.
+
+    A failed probe is logged loudly but does not stop the server: a broken
+    probe is better than a silent text-only generation later, and the health
+    endpoint surfaces the verdict so a returning UI can see it.
+    """
+    import torch
+    from PIL import Image
+
+    # Divisible by 16 (and by 32/64 for safety against the mmdit patch size)
+    # so the pipeline's width%align check can never reject the probe.
+    W, H = 512, 256
+    out: dict[str, Any] = {"res": f"{W}x{H}", "steps": 2}
+
+    tower = getattr(model, "text_encoder", None)
+    if isinstance(tower, torch.nn.Module):
+        try:
+            dev = next(tower.parameters()).device
+            out["text_tower_device"] = str(dev)
+            out["on_gpu1"] = bool(split.get("enabled")) and str(dev) == str(DEVICE2)
+        except StopIteration:
+            out["text_tower_device"] = "empty"
+    else:
+        out["text_tower_device"] = "missing"
+
+    def probe(tag: str, **extra) -> None:
+        t0 = time.time()
+        try:
+            res = model.generate(
+                seed=7,
+                input_prompt="minimal hand-drawn stickman on a pure white background",
+                n_prompt="", sampling_steps=2, width=W, height=H, guide_scale=0.0,
+                batch_size=1, loras_slists={"phase1": []}, **extra)
+            out[tag] = {"ok": bool(res is not None), "s": round(time.time() - t0, 1)}
+        except Exception as e:
+            torch.cuda.empty_cache()
+            out[tag] = {"ok": False, "s": round(time.time() - t0, 1),
+                        "error": f"{type(e).__name__}: {e}"}
+        torch.cuda.empty_cache()
+
+    probe("text")
+    ref = None
+    if FRAMES.exists():
+        for d in sorted(FRAMES.iterdir()):
+            if not d.is_dir():
+                continue
+            for p in sorted(d.iterdir()):
+                if p.suffix.lower() in IMG_EXT:
+                    ref = Image.open(p).convert("RGB")
+                    break
+            if ref is not None:
+                break
+    if ref is not None:
+        probe("with_ref", input_ref_images=[ref], video_prompt_type="KI")
+    else:
+        out["with_ref"] = {"ok": None, "note": "no corpus frame found"}
+
+    out["ok"] = bool(out["text"].get("ok")) and bool(out["with_ref"].get("ok"))
+    log(f"[selftest] text tower on {out.get('text_tower_device')} "
+        f"({'GPU1' if out.get('on_gpu1') else 'GPU0/CPU'})")
+    log(f"[selftest] text-only probe {out['text'].get('s')}s -> "
+        f"{'OK' if out['text'].get('ok') else 'FAILED: ' + (out['text'].get('error') or '?')}")
+    if out["with_ref"].get("ok") is None:
+        log(f"[selftest] reference probe skipped ({out['with_ref'].get('note')})")
+    else:
+        log(f"[selftest] reference probe {out['with_ref'].get('s')}s -> "
+            f"{'OK' if out['with_ref'].get('ok') else 'FAILED: ' + (out['with_ref'].get('error') or '?')}")
+    if not out["ok"]:
+        log("[selftest] !!! probe failed -- the dual-GPU split or reference path "
+            "is broken; the UI will show the verdict on /api/health")
+    return out
+
+
 def gpu1_text_tower(model, pipe: dict) -> dict:
     """Pin the Qwen3-VL text+vision tower to GPU1. MUST run before offload.profile().
 
@@ -315,7 +402,7 @@ def load() -> None:
     split = gpu1_text_tower(model, pipe)
     if split["enabled"]:
         log(f"[split] text tower -> {DEVICE2}, removed {split['moved']} from mmgp; "
-            "pin requirement should drop ~4.0 GB")
+            "pin requirement should drop ~4.3 GB")
     else:
         log(f"[split] single-GPU ({split.get('reason')}) -- GPU1 will stay idle")
 
@@ -337,7 +424,13 @@ def load() -> None:
                         perc_reserved_mem_max=PERC_RESERVED)
     offload.shared_state["_attention"] = "sdpa"
     profile_log = profile_buf.getvalue()
-    pinning = "FULL" if "Switching to partial pinning" not in profile_log else "PARTIAL"
+    # mmgp can report partial pinning two ways: the estimate-level check in
+    # all() before pinning, or inside _pin_to_memory() under RAM pressure.
+    # Catch both so health never claims FULL when transfers are actually off.
+    partial_markers = ("Switching to partial pinning",
+                       "The model was partially pinned",
+                       "Unable to pin more tensors")
+    pinning = "PARTIAL" if any(m in profile_log for m in partial_markers) else "FULL"
     if pinning == "PARTIAL":
         log("[load] PINNING=PARTIAL -- async transfers are OFF; shots will be slow "
             "(the split is on, so the fix is a higher PERC_RESERVED_MEM or more RAM)")
@@ -358,6 +451,14 @@ def load() -> None:
     STATE["report"] = {"patches": patches, "fp16_cast": cast, "device_split": split,
                        "pinning": pinning, "budgets": BUDGETS,
                        "load_s": round(time.time() - t0, 1)}
+    # Prove the split + img2img path before telling the UI we are ready. This
+    # costs ~15-30 s of boot but verifies the two things that decide whether
+    # shots work and how fast they are, and it warms the transformer into VRAM.
+    # Set SELF_TEST=0 to skip (e.g. while iterating on load errors).
+    if os.environ.get("SELF_TEST", "1") == "1":
+        st0 = time.time()
+        STATE["report"]["selftest"] = self_test(model, split)
+        log(f"[load] selftest done in {round(time.time() - st0, 1)}s")
     STATE["ready"] = True
     log(f"[load] ready in {STATE['report']['load_s']}s")
 
@@ -556,9 +657,14 @@ def health():
                "elapsed_s": round(time.time() - GEN["started"], 1) if GEN["busy"] else 0.0}
     split = STATE["report"].get("device_split", {})
     pinning = STATE["report"].get("pinning", "")
+    selftest = STATE["report"].get("selftest")
     speed = None
     if STATE["ready"]:
-        if not split.get("enabled"):
+        if selftest and selftest.get("ok") is False:
+            speed = {"flag": "selftest-failed",
+                     "msg": "boot self-test failed -- check the server log; "
+                            "the split or reference path is broken"}
+        elif not split.get("enabled"):
             speed = {"flag": "single-gpu",
                      "msg": f"dual-GPU split off ({split.get('reason') or 'not configured'}) -- expect ~55-60 s/image"}
         elif not split.get("moved"):
@@ -567,6 +673,13 @@ def health():
         elif pinning == "PARTIAL":
             speed = {"flag": "partial-pinning",
                      "msg": "text tower on GPU1 but host-RAM pinning is PARTIAL -- async transfers off, expect slow images"}
+        elif selftest:
+            tt = selftest.get("text", {}).get("s")
+            rf = selftest.get("with_ref", {}).get("s")
+            speed = {"flag": "ok",
+                     "msg": f"verified: text tower on {split.get('target')}, pinning {pinning}; "
+                            f"probe text-only {tt}s / with-ref {rf}s "
+                            f"(2 steps at {selftest.get('res')}) -- expect ~20-40 s/image at full res"}
         else:
             speed = {"flag": "ok",
                      "msg": f"text tower on {split.get('target')}, pinning {pinning} -- expect ~20-46 s/image"}

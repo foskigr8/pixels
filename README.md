@@ -53,6 +53,10 @@ The UI applies the style clause automatically so it can't drift between shots, p
 references from the committed `frames/` corpus with thumbnails, files shots into
 `shots/`, and shows median generation time as you work.
 
+Drop feedback is the composer's text prompt only — dragging a reference lights up
+the prompt box, never a full-screen overlay. The gallery still accepts a drop (a drop
+anywhere attaches the reference), it just doesn't announce it with a full-canvas panel.
+
 ### Speed
 
 18 GB of weights do not fit in 16 GB of VRAM, so mmgp streams them from host RAM. That
@@ -86,13 +90,26 @@ the diagnosis a one-liner instead of reading logs:
 - The notebook's Start cell ends with a speed self-check that warns out loud if the
   split did not engage or pinning is partial, so a slow session explains itself
   before you start generating.
+- On boot the server runs a **self-test**: two tiny generations through the exact
+  `/api/generate` path — one text-only, one with a real corpus frame as the
+  reference — so the dual-GPU split and the img2img/reference path are *proven*
+  working (or loudly failed) before the UI is marked ready. It also warms the
+  transformer into VRAM, so the first real shot does not pay the cold-start cost.
+  Set `SELF_TEST=0` to skip it while iterating on load errors.
+
+Reference images are applied end to end: the UI reports "N reference(s) applied"
+after each shot, and a requested ref that is not on disk is a 400 instead of a
+silent text-only generation.
 
 `device_split.moved` still tells you the raw split state; if that list is empty you
 are running single-GPU. If a session was started before the split commit and never
 restarted, re-run the Start cell — refreshing the browser does not reload the server.
 
-Budgets are capped by mmgp at 80% of VRAM (~11.9 GB on a T4), so setting a larger
-number is silently clamped.
+Budgets are capped by mmgp at 80% of VRAM (~12.8 GiB on a 16 GiB T4), so setting a
+larger number is silently clamped. The transformer (12.86 GiB at int8) sits just
+under that cap, so `TRANSFORMER_BUDGET_MB` is exposed to push it up toward fully
+resident if a session has the VRAM headroom — the default 11000 leaves room for
+activations; raising it risks CUDA OOM.
 
 Ruled out, don't retry: DDP, `device_map="auto"`, PCIe tensor-parallel. Diffusion steps
 are sequential, so splitting one step across two T4s over PCIe is a net loss.

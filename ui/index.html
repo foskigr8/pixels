@@ -165,16 +165,12 @@ svg{display:block}
   border:1px solid rgba(248,113,113,.25);padding:13px 15px;border-radius:12px;
   font-size:12.5px;white-space:pre-wrap}
 
-/* ---------- drop feedback (each zone highlights itself, in place) ---------- */
-.main.dragover::after{content:'Drop to add as reference';position:absolute;inset:8px;z-index:40;
-  display:grid;place-items:center;text-align:center;background:rgba(10,10,16,.88);
-  backdrop-filter:blur(8px);border:2px dashed var(--ac2);border-radius:16px;
-  color:var(--ac2);font-size:15px;font-weight:550;pointer-events:none}
-/* dragging an in-app card (shot / frame / ref) over the gallery gets a subtle
-   ring, never the full overlay -- the overlay used to pop the moment a card
-   drag started anywhere over the gallery, covering the cards you were dragging */
-.main.cardover{box-shadow:inset 0 0 0 2px var(--acdim),inset 0 0 0 1px var(--ac)}
+/* ---------- drop feedback ---------- */
+/* The drop target is the composer's text prompt -- the highlight appears only
+   around that input, never as a full-screen overlay over the gallery. */
 .dock.dragover{border-color:var(--ac);box-shadow:0 0 0 3px var(--acdim),0 20px 60px rgba(0,0,0,.35)}
+.dock.dragover #p{box-shadow:0 0 0 3px var(--acdim),0 0 0 1.5px var(--ac);
+  border-radius:12px;background:rgba(124,108,240,.08)}
 
 /* ---------- dock / composer ---------- */
 .dockwrap{flex:none;padding:0 26px 20px}
@@ -364,7 +360,8 @@ svg{display:block}
           <label class="pill" title="Quality / steps">
             <svg viewBox="0 0 24 24"><path d="m12 3 1.8 4.6L18 9l-4.2 1.4L12 15l-1.8-4.6L6 9l4.2-1.4z"/></svg>
             <select id="steps">
-              <option value="6">Fast</option><option value="8" selected>Balanced</option>
+              <option value="4">Max speed</option><option value="6">Fast</option>
+              <option value="8" selected>Balanced</option>
               <option value="12">High</option><option value="16">Ultra</option>
             </select>
           </label>
@@ -420,6 +417,10 @@ async function poll(){
       ? [h.vram_free_gb ? h.vram_free_gb+' GB free' : null, s.n ? 'median '+s.median_s+'s' : null]
         .filter(Boolean).join(' · ') || 'ready'
       : 'loading model…';
+    if(h.speed){
+      $('stat').title = h.speed.msg;                       // hover for the full diagnosis
+      if(h.speed.flag === 'selftest-failed') $('stat').textContent = '⚠ self-test failed';
+    }
     $('go').disabled = !up || busy;
     // A generation this tab did not start (closed mid-render, or another tab)
     // is still in flight on the server: show the working tile with the live
@@ -616,37 +617,39 @@ function isFileDrag(e){
   const t = e.dataTransfer && e.dataTransfer.types;
   return !!(t && [...t].includes('Files'));
 }
-// The gallery gets two different highlights: OS file drags show the big
-// "Drop to add as reference" overlay, but dragging an in-app card only shows
-// a subtle ring. The overlay used to appear the moment a card drag started
-// anywhere over the gallery, covering the cards you were dragging and reading
-// as "the highlight is in the wrong place".
+// The visual highlight for a drop is the composer's text prompt only -- never
+// the whole canvas. The gallery still accepts drops (a drop anywhere attaches
+// the reference), but passes no highlight class so it stays out of the way.
 function wireDrop(el, opts = {}){
   dropDepths.set(el, 0);
-  const clsFor = e => isFileDrag(e) ? (opts.fileClass || 'dragover') : (opts.cardClass || 'dragover');
+  // undefined -> default 'dragover'; null -> no visual feedback
+  const clsFor = e => {
+    const v = isFileDrag(e) ? opts.fileClass : opts.cardClass;
+    return v === undefined ? 'dragover' : v;
+  };
   ['dragenter','dragover'].forEach(ev => el.addEventListener(ev, e => {
     e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
     if(ev === 'dragenter'){
       el.dataset.dropCls = clsFor(e);
       const d = (dropDepths.get(el) || 0) + 1;
       dropDepths.set(el, d);
-      if(d === 1) el.classList.add(el.dataset.dropCls);
+      if(d === 1 && el.dataset.dropCls) el.classList.add(el.dataset.dropCls);
     }
   }));
   el.addEventListener('dragleave', () => {
     const d = Math.max(0, (dropDepths.get(el) || 0) - 1);
     dropDepths.set(el, d);
-    if(d === 0) el.classList.remove(el.dataset.dropCls || 'dragover');
+    if(d === 0 && el.dataset.dropCls) el.classList.remove(el.dataset.dropCls);
   });
   el.addEventListener('drop', e => {
-    e.preventDefault(); dropDepths.set(el, 0); el.classList.remove('dragover', 'cardover');
+    e.preventDefault(); dropDepths.set(el, 0); el.classList.remove('dragover');
     let payload = null;
     try{ payload = JSON.parse(e.dataTransfer.getData('application/x-studio') || 'null'); }catch{}
     if(payload && payload.name) return useAsRef(payload.kind || 'shot', payload.name);
     if(e.dataTransfer.files?.length) attach(e.dataTransfer.files);
   });
 }
-wireDrop($('main'), {cardClass: 'cardover'});
+wireDrop($('main'), {fileClass: null, cardClass: null});
 wireDrop($('dock'));
 
 /* ---------- gallery ---------- */
