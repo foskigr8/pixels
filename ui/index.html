@@ -170,6 +170,10 @@ svg{display:block}
   display:grid;place-items:center;text-align:center;background:rgba(10,10,16,.88);
   backdrop-filter:blur(8px);border:2px dashed var(--ac2);border-radius:16px;
   color:var(--ac2);font-size:15px;font-weight:550;pointer-events:none}
+/* dragging an in-app card (shot / frame / ref) over the gallery gets a subtle
+   ring, never the full overlay -- the overlay used to pop the moment a card
+   drag started anywhere over the gallery, covering the cards you were dragging */
+.main.cardover{box-shadow:inset 0 0 0 2px var(--acdim),inset 0 0 0 1px var(--ac)}
 .dock.dragover{border-color:var(--ac);box-shadow:0 0 0 3px var(--acdim),0 20px 60px rgba(0,0,0,.35)}
 
 /* ---------- dock / composer ---------- */
@@ -280,9 +284,9 @@ svg{display:block}
   <aside class="sidebar">
     <div class="brand"><div class="mark"></div><span>Studio</span></div>
     <nav class="nav">
-      <button class="navi on" data-mode="shots"><svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10"/></svg><span>Create</span></button>
-      <button class="navi" data-mode="shots"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg><span>My Creations</span></button>
-      <button class="navi" data-mode="refs"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m14.7 9.3-2 5.4-5.4 2 2-5.4z"/></svg><span>Explore</span></button>
+      <button class="navi on" data-nav="create" data-mode="shots"><svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h14V10"/></svg><span>Create</span></button>
+      <button class="navi" data-nav="creations" data-mode="shots"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg><span>My Creations</span></button>
+      <button class="navi" data-nav="explore" data-mode="refs"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m14.7 9.3-2 5.4-5.4 2 2-5.4z"/></svg><span>Explore</span></button>
     </nav>
     <div class="grow"></div>
     <div class="sidebottom">
@@ -341,7 +345,7 @@ svg{display:block}
         <div class="refbar">
           <span class="refcap">References</span>
           <div class="refslots" id="refslots"></div>
-          <span class="refhint">optional, up to 2 — style/composition guides for the next generation</span>
+          <span class="refhint" id="refhint">optional, up to 2 — style/composition guides for the next generation</span>
         </div>
         <div class="bar">
           <textarea id="p" rows="1" placeholder="a stickman sweating beside a desk fan, blue airflow, red heat lines…"></textarea>
@@ -404,6 +408,7 @@ let stylePreset = null, presets = {};
 let view = localStorage.getItem('studio.view') || 'grid';
 let mode = 'shots';                       // which collection the grid shows
 let query = '';                           // search filter
+let lastServerBusy = false;               // a generation running that this tab didn't start
 
 /* ---------- status ---------- */
 async function poll(){
@@ -416,6 +421,26 @@ async function poll(){
         .filter(Boolean).join(' · ') || 'ready'
       : 'loading model…';
     $('go').disabled = !up || busy;
+    // A generation this tab did not start (closed mid-render, or another tab)
+    // is still in flight on the server: show the working tile with the live
+    // elapsed time, then refresh the gallery once it lands.
+    if(up && h.busy && !busy){
+      if(!lastServerBusy){
+        lastServerBusy = true;
+        $('hint').textContent = 'generating…';
+      }
+      // Boot's first loadShots() renders the plain grid after the first poll
+      // has already flagged the in-flight generation, so re-apply the working
+      // tile whenever it is missing (not just once -- that race hides it).
+      if(!document.querySelector('#gridwrap .working')) render(true);
+      const el = $('el');
+      if(el && h.generating) el.textContent = `${h.generating.elapsed_s}s (in progress)`;
+    }else if(lastServerBusy){
+      lastServerBusy = false;
+      $('hint').textContent = '';
+      await loadShots();
+      render();
+    }
   }catch{ $('dot').className='dot bad'; $('stat').textContent='offline'; $('go').disabled=true; }
 }
 
@@ -587,30 +612,41 @@ function setDrag(e, payload){
 // a shared counter/overlay made the hint appear over the gallery even while
 // dragging over the composer at the bottom.
 const dropDepths = new WeakMap();
-function wireDrop(el){
+function isFileDrag(e){
+  const t = e.dataTransfer && e.dataTransfer.types;
+  return !!(t && [...t].includes('Files'));
+}
+// The gallery gets two different highlights: OS file drags show the big
+// "Drop to add as reference" overlay, but dragging an in-app card only shows
+// a subtle ring. The overlay used to appear the moment a card drag started
+// anywhere over the gallery, covering the cards you were dragging and reading
+// as "the highlight is in the wrong place".
+function wireDrop(el, opts = {}){
   dropDepths.set(el, 0);
+  const clsFor = e => isFileDrag(e) ? (opts.fileClass || 'dragover') : (opts.cardClass || 'dragover');
   ['dragenter','dragover'].forEach(ev => el.addEventListener(ev, e => {
     e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
     if(ev === 'dragenter'){
+      el.dataset.dropCls = clsFor(e);
       const d = (dropDepths.get(el) || 0) + 1;
       dropDepths.set(el, d);
-      if(d === 1) el.classList.add('dragover');
+      if(d === 1) el.classList.add(el.dataset.dropCls);
     }
   }));
   el.addEventListener('dragleave', () => {
     const d = Math.max(0, (dropDepths.get(el) || 0) - 1);
     dropDepths.set(el, d);
-    if(d === 0) el.classList.remove('dragover');
+    if(d === 0) el.classList.remove(el.dataset.dropCls || 'dragover');
   });
   el.addEventListener('drop', e => {
-    e.preventDefault(); dropDepths.set(el, 0); el.classList.remove('dragover');
+    e.preventDefault(); dropDepths.set(el, 0); el.classList.remove('dragover', 'cardover');
     let payload = null;
     try{ payload = JSON.parse(e.dataTransfer.getData('application/x-studio') || 'null'); }catch{}
     if(payload && payload.name) return useAsRef(payload.kind || 'shot', payload.name);
     if(e.dataTransfer.files?.length) attach(e.dataTransfer.files);
   });
 }
-wireDrop($('main'));
+wireDrop($('main'), {cardClass: 'cardover'});
 wireDrop($('dock'));
 
 /* ---------- gallery ---------- */
@@ -814,6 +850,7 @@ $('go').onclick = async () => {
     const r = await jpost('/generate',{prompt:txt, project, preset:stylePreset, width:w, height:h,
       steps:+$('steps').value, seed:seedVal?+seedVal:-1, ref_paths:attached});
     $('hint').textContent = `${r.generate_s}s · seed ${r.seed}`
+      + (r.refs_used ? ` · ${r.refs_used} reference${r.refs_used>1?'s':''} applied` : '')
       + (r.refs_dropped ? ` · ${r.refs_dropped} reference ignored (model takes 2)` : '');
     ta.value=''; ta.style.height='auto';
     // References are for this shot only — clear them once it's made instead of
@@ -834,6 +871,8 @@ $('go').onclick = async () => {
   paintViewBtn();
   updateModeUI();
   await loadProjects(); await loadRefs(); paintAttach(); await loadShots();
+  poll();   // re-check after the first gallery render, so an in-flight
+            // generation (returned mid-render) puts its working tile on top
 })();
 poll(); setInterval(poll, 5000);
 </script>

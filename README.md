@@ -77,8 +77,19 @@ Switching to partial pinning since full requirements ... is 18107.2 MB
   while estimated available reservable RAM is 16050.0 MB
 ```
 
-then async transfers are effectively off and you are paying for it. `/api/health`
-reports `device_split.moved`; if that list is empty you are running single-GPU.
+then async transfers are effectively off and you are paying for it. Two places make
+the diagnosis a one-liner instead of reading logs:
+
+- `/api/health` now reports `speed` — a `{flag, msg}` pair that reads
+  `single-gpu`, `partial-pinning`, or `ok` with the expected seconds per image. The
+  load log also prints `pinning=FULL` or `PINNING=PARTIAL` explicitly.
+- The notebook's Start cell ends with a speed self-check that warns out loud if the
+  split did not engage or pinning is partial, so a slow session explains itself
+  before you start generating.
+
+`device_split.moved` still tells you the raw split state; if that list is empty you
+are running single-GPU. If a session was started before the split commit and never
+restarted, re-run the Start cell — refreshing the browser does not reload the server.
 
 Budgets are capped by mmgp at 80% of VRAM (~11.9 GB on a T4), so setting a larger
 number is silently clamped.

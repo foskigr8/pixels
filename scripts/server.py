@@ -327,11 +327,22 @@ def load() -> None:
     # perc_reserved_mem_max is a genuine offload.all() kwarg in 3.7.12 and
     # profile() forwards **overrideKwargs into all() verbatim -- no fallback
     # needed, and a TypeError here would mean the mmgp version changed.
-    offload.profile(pipe, profile_no=2, quantizeTransformer=False,
-                    convertWeightsFloatTo=torch.float16, pinnedMemory=True,
-                    asyncTransfers=True, budgets=dict(BUDGETS),
-                    perc_reserved_mem_max=PERC_RESERVED)
+    import contextlib
+
+    profile_buf = io.StringIO()
+    with contextlib.redirect_stdout(profile_buf):
+        offload.profile(pipe, profile_no=2, quantizeTransformer=False,
+                        convertWeightsFloatTo=torch.float16, pinnedMemory=True,
+                        asyncTransfers=True, budgets=dict(BUDGETS),
+                        perc_reserved_mem_max=PERC_RESERVED)
     offload.shared_state["_attention"] = "sdpa"
+    profile_log = profile_buf.getvalue()
+    pinning = "FULL" if "Switching to partial pinning" not in profile_log else "PARTIAL"
+    if pinning == "PARTIAL":
+        log("[load] PINNING=PARTIAL -- async transfers are OFF; shots will be slow "
+            "(the split is on, so the fix is a higher PERC_RESERVED_MEM or more RAM)")
+    else:
+        log("[load] pinning=FULL -- async transfers on, at speed")
 
     try:
         cast = sweep_fp16(model)
@@ -345,7 +356,8 @@ def load() -> None:
     torch.cuda.empty_cache()
     STATE["model"] = model
     STATE["report"] = {"patches": patches, "fp16_cast": cast, "device_split": split,
-                       "budgets": BUDGETS, "load_s": round(time.time() - t0, 1)}
+                       "pinning": pinning, "budgets": BUDGETS,
+                       "load_s": round(time.time() - t0, 1)}
     STATE["ready"] = True
     log(f"[load] ready in {STATE['report']['load_s']}s")
 
@@ -355,29 +367,129 @@ def load() -> None:
 # ---------------------------------------------------------------------------
 
 import base64  # noqa: E402
+import io  # noqa: E402
 import re  # noqa: E402
 
-from fastapi import FastAPI, HTTPException  # noqa: E402
-from fastapi.responses import FileResponse, HTMLResponse  # noqa: E402
+from fastapi import FastAPI, HTTPException, Request  # noqa: E402
+from fastapi.exceptions import RequestValidationError  # noqa: E402
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
 app = FastAPI(title="studio")
 
 SAFE = re.compile(r"[^a-zA-Z0-9 _-]")
+IMG_EXT = (".jpg", ".jpeg", ".png", ".webp")
+MAX_UPLOAD = int(float(os.environ.get("MAX_UPLOAD_MB", "32")) * 2**20)
+# How many /api/generate calls may sit waiting on LOCK before we start refusing.
+# Requests block a thread from the (finite) request threadpool while they wait,
+# so an unbounded queue eventually starves /api/health and /api/shots -- exactly
+# the endpoints a returning UI needs. Refusing early keeps the studio answerable.
+MAX_QUEUE = int(os.environ.get("MAX_QUEUE", "3"))
+
+# What generate() is doing right now, so a UI that was closed mid-render can come
+# back and see that its work is still in flight instead of assuming it was lost.
+# Guarded by GEN_LOCK (cheap, never held across a generation).
+GEN: dict[str, Any] = {"busy": False, "waiting": 0, "project": None, "prompt": "", "started": 0.0}
+GEN_LOCK = threading.Lock()
+
+
+# --- errors ----------------------------------------------------------------
+# The UI does `r.json().then(e => Promise.reject(e.detail))`, so every failure
+# has to be JSON with a *string* `detail`. Bare tracebacks (plain-text 500) and
+# FastAPI's default 422 (detail is a list of dicts) both render as noise.
+
+
+@app.exception_handler(RequestValidationError)
+def _bad_request(request: Request, exc: RequestValidationError) -> JSONResponse:
+    parts = []
+    for e in exc.errors()[:4]:
+        loc = ".".join(str(x) for x in e.get("loc", ())[1:]) or "body"
+        parts.append(f"{loc}: {e.get('msg', 'invalid')}")
+    return JSONResponse(status_code=422, content={"detail": "; ".join(parts) or "invalid request"})
+
+
+@app.exception_handler(Exception)
+def _unhandled(request: Request, exc: Exception) -> JSONResponse:
+    log(f"[api] unhandled on {request.url.path}\n" + traceback.format_exc())
+    return JSONResponse(status_code=500, content={"detail": f"{type(exc).__name__}: {exc}"})
+
+
+# --- names -----------------------------------------------------------------
+
+
+def _clean(name: str) -> str:
+    return SAFE.sub("", (name or "").strip())[:48].strip()
 
 
 def slug(name: str) -> str:
-    s = SAFE.sub("", (name or "").strip())[:48].strip()
-    return s or "untitled"
+    """Project name -> directory name. Never empty, never a path."""
+    return _clean(name) or "untitled"
 
 
-def pdirs(project: str) -> tuple[Path, Path]:
-    """(shots, refs) for a project. Created on demand."""
+def safe_file(name: str) -> str:
+    """A single file name inside a project directory. Rejects traversal.
+
+    `..`, `/`, `\\`, NUL and absolute paths never survive: what comes back is a
+    bare basename or a 400. Callers must use this, not Path(name).name, which
+    silently turns `..` into `..`.
+    """
+    raw = (name or "").strip().replace("\\", "/")
+    if "\x00" in raw:
+        raise HTTPException(400, "invalid file name")
+    n = Path(raw).name
+    if not n or n in (".", "..") or "/" in n:
+        raise HTTPException(400, "invalid file name")
+    if len(n) > 128:
+        raise HTTPException(400, "file name too long")
+    return n
+
+
+def pdirs(project: str, create: bool = True) -> tuple[Path, Path]:
+    """(shots, refs) for a project. Created on demand unless create=False.
+
+    Read endpoints pass create=False: a GET should never conjure a directory,
+    or a typo'd project name litters the studio with empty projects.
+    """
     p = slug(project)
     a, b = SHOTS / p, REFS / p
-    a.mkdir(parents=True, exist_ok=True)
-    b.mkdir(parents=True, exist_ok=True)
+    if create:
+        try:
+            a.mkdir(parents=True, exist_ok=True)
+            b.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            raise HTTPException(500, f"could not create project directory: {e}")
     return a, b
+
+
+def _mtime(p: Path) -> float:
+    """stat() that tolerates the file being deleted underneath the listing."""
+    try:
+        return p.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def atomic_write(path: Path, data: bytes) -> None:
+    """Write via a temp file in the same directory + os.replace.
+
+    Readers of the studio directory only ever see the complete file or no file
+    at all -- never the half of it that made it to disk before the session was
+    killed. The temp name deliberately ends in `.tmp<pid>` so it matches neither
+    *.png nor *.json nor the ref extensions.
+    """
+    tmp = path.with_name(f"{path.name}.tmp{os.getpid()}")
+    try:
+        with open(tmp, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
 
 class Req(BaseModel):
@@ -409,7 +521,10 @@ class Upload(BaseModel):
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    return (UI / "index.html").read_text()
+    try:
+        return (UI / "index.html").read_text(encoding="utf-8")
+    except OSError as e:
+        raise HTTPException(500, f"cannot read {UI / 'index.html'}: {e}")
 
 
 @app.get("/api/config")
@@ -419,20 +534,50 @@ def config():
 
 @app.get("/api/health")
 def health():
-    import torch
-
     free, per_gpu = None, []
-    if torch.cuda.is_available():
-        # per-GPU used, so you can see at a glance whether GPU1 is actually
-        # holding the text tower (~4 GB) or still sitting at ~0.
-        for i in range(torch.cuda.device_count()):
-            f, t = torch.cuda.mem_get_info(i)
-            per_gpu.append({"gpu": i, "free_gb": round(f / 2**30, 2),
-                            "used_gb": round((t - f) / 2**30, 2)})
-        free = per_gpu[0]["free_gb"]
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            # per-GPU used, so you can see at a glance whether GPU1 is actually
+            # holding the text tower (~4 GB) or still sitting at ~0.
+            for i in range(torch.cuda.device_count()):
+                f, t = torch.cuda.mem_get_info(i)
+                per_gpu.append({"gpu": i, "free_gb": round(f / 2**30, 2),
+                                "used_gb": round((t - f) / 2**30, 2)})
+            free = per_gpu[0]["free_gb"]
+    except Exception as e:
+        # VRAM reporting is a nicety; never let it take health down with it,
+        # health is what a returning UI polls first.
+        log(f"[health] vram read failed ({type(e).__name__}: {e})")
+    with GEN_LOCK:
+        gen = {"busy": GEN["busy"], "queued": GEN["waiting"], "project": GEN["project"],
+               "prompt": GEN["prompt"],
+               "elapsed_s": round(time.time() - GEN["started"], 1) if GEN["busy"] else 0.0}
+    split = STATE["report"].get("device_split", {})
+    pinning = STATE["report"].get("pinning", "")
+    speed = None
+    if STATE["ready"]:
+        if not split.get("enabled"):
+            speed = {"flag": "single-gpu",
+                     "msg": f"dual-GPU split off ({split.get('reason') or 'not configured'}) -- expect ~55-60 s/image"}
+        elif not split.get("moved"):
+            speed = {"flag": "single-gpu",
+                     "msg": "split enabled but moved nothing -- GPU1 idle, expect ~55-60 s/image"}
+        elif pinning == "PARTIAL":
+            speed = {"flag": "partial-pinning",
+                     "msg": "text tower on GPU1 but host-RAM pinning is PARTIAL -- async transfers off, expect slow images"}
+        else:
+            speed = {"flag": "ok",
+                     "msg": f"text tower on {split.get('target')}, pinning {pinning} -- expect ~20-46 s/image"}
     return {"status": "ready" if STATE["ready"] else "loading",
             "vram_free_gb": free, "gpus": per_gpu,
-            "generated": len(HISTORY), **STATE["report"]}
+            "generated": len(HISTORY),
+            # A UI that was closed mid-render polls this on return: busy=true
+            # means the shot it thinks it lost is still being made.
+            "busy": gen["busy"], "queued": gen["queued"], "generating": gen,
+            "speed": speed,
+            **STATE["report"]}
 
 
 @app.get("/api/stats")
@@ -443,13 +588,18 @@ def stats():
 
 @app.get("/api/projects")
 def projects():
-    SHOTS.mkdir(parents=True, exist_ok=True)
+    try:
+        SHOTS.mkdir(parents=True, exist_ok=True)
+        entries = sorted(SHOTS.iterdir())
+    except OSError as e:
+        raise HTTPException(500, f"cannot read shots directory {SHOTS}: {e}")
     out = []
-    for d in sorted(SHOTS.iterdir()):
+    for d in entries:
         if d.is_dir():
             out.append({"name": d.name,
                         "shots": len(list(d.glob("*.png"))),
-                        "refs": len(list((REFS / d.name).glob("*"))) if (REFS / d.name).exists() else 0})
+                        "refs": len([p for p in (REFS / d.name).glob("*")
+                                     if p.suffix.lower() in IMG_EXT]) if (REFS / d.name).exists() else 0})
     # No implicit project: an empty studio starts empty. Directories are created
     # on first generate or upload, not on first page load.
     return {"projects": out}
@@ -464,19 +614,39 @@ def new_project(p: NewProject):
 
 @app.post("/api/rename")
 def rename_project(r: Rename):
-    old, new = slug(r.project), slug(r.name)
-    if not new:
+    old, base = slug(r.project), _clean(r.name)
+    # _clean, not slug: slug() turns "" and "///" into "untitled", which would
+    # silently rename the project rather than telling the user to type a name.
+    if not base:
         raise HTTPException(400, "name required")
-    if new == old:
-        return {"name": new}
+    if base == old:
+        return {"name": base}
+    if not (SHOTS / old).exists() and not (REFS / old).exists():
+        raise HTTPException(404, f"project '{old}' not found")
+    with GEN_LOCK:
+        if GEN["busy"] and GEN["project"] == old:
+            raise HTTPException(409, "a generation is running in this project -- "
+                                     "rename it once the shot finishes")
     # keep the target free instead of overwriting
-    i = 2
+    new, i = base, 2
     while (SHOTS / new).exists() or (REFS / new).exists():
-        new = f"{slug(r.name)} {i}"
+        new = f"{base} {i}"
         i += 1
-    for src, dst in ((SHOTS / old, SHOTS / new), (REFS / old, REFS / new)):
-        if src.exists():
-            src.rename(dst)
+        if i > 999:
+            raise HTTPException(409, f"too many projects named '{base}'")
+    done: list[tuple[Path, Path]] = []
+    try:
+        for src, dst in ((SHOTS / old, SHOTS / new), (REFS / old, REFS / new)):
+            if src.exists():
+                os.replace(src, dst)
+                done.append((src, dst))
+    except OSError as e:
+        for src, dst in reversed(done):   # half a rename is worse than none
+            try:
+                os.replace(dst, src)
+            except OSError:
+                pass
+        raise HTTPException(500, f"rename failed: {e}")
     return {"name": new}
 
 
@@ -496,7 +666,7 @@ def frames():
 @app.get("/api/shots")
 def shots(project: str = "untitled"):
     d, _ = pdirs(project)
-    ps = sorted(d.glob("*.png"), key=lambda p: p.stat().st_mtime, reverse=True)
+    ps = sorted(d.glob("*.png"), key=lambda p: _mtime(p), reverse=True)
     out = []
     for p in ps[:80]:
         meta = {}
@@ -516,7 +686,7 @@ def refs(project: str = "untitled"):
     """A project's own reference images, newest first."""
     _, d = pdirs(project)
     ps = sorted((p for p in d.iterdir() if p.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp")),
-                key=lambda p: p.stat().st_mtime, reverse=True)
+                key=lambda p: _mtime(p), reverse=True)
     return {"refs": [p.name for p in ps]}
 
 
@@ -525,20 +695,22 @@ def upload(u: Upload):
     """Drag-and-drop target. Base64 in JSON, so no multipart dependency."""
     _, d = pdirs(u.project)
     raw = u.data.split(",", 1)[-1]
+    if len(raw) > MAX_UPLOAD * 4 // 3 + 16:
+        raise HTTPException(413, f"image too large (max {MAX_UPLOAD // 2**20} MB)")
     try:
         blob = base64.b64decode(raw)
     except Exception:
         raise HTTPException(400, "could not decode image data")
-    ext = Path(u.name).suffix.lower() or ".png"
+    stem = slug(Path(u.name).stem) or "ref"
+    ext = (Path(u.name).suffix.lower() or ".png")[:8]
     if ext not in (".jpg", ".jpeg", ".png", ".webp"):
         raise HTTPException(400, f"unsupported file type {ext}")
-    stem = slug(Path(u.name).stem) or "ref"
     out = d / f"{stem}{ext}"
     i = 1
     while out.exists():
         out = d / f"{stem}_{i}{ext}"
         i += 1
-    out.write_bytes(blob)
+    atomic_write(out, blob)
     return {"name": out.name}
 
 
@@ -549,7 +721,8 @@ def img(name: str, kind: str = "shot", project: str = "untitled"):
         if FRAMES.resolve() in cand.parents and cand.is_file():
             return FileResponse(cand)
         raise HTTPException(404, "not found")
-    d = (pdirs(project)[0] if kind == "shot" else pdirs(project)[1]) / Path(name).name
+    f = safe_file(name)
+    d = (pdirs(project)[0] if kind == "shot" else pdirs(project)[1]) / f
     if not d.is_file():
         raise HTTPException(404, "not found")
     return FileResponse(d)
@@ -561,7 +734,8 @@ def delete(name: str, kind: str = "shot", project: str = "untitled"):
     # this, a frame delete falls through and removes a same-named project ref.
     if kind == "frame":
         raise HTTPException(403, "corpus frames cannot be deleted")
-    d = (pdirs(project)[0] if kind == "shot" else pdirs(project)[1]) / Path(name).name
+    f = safe_file(name)
+    d = (pdirs(project)[0] if kind == "shot" else pdirs(project)[1]) / f
     if d.is_file():
         d.unlink()
         d.with_suffix(".json").unlink(missing_ok=True)
@@ -588,14 +762,23 @@ def generate(r: Req):
     seed = r.seed if r.seed >= 0 else int(time.time() * 1000) % (2**31)
 
     # Wan2GP accepts at most 2 reference images; more are dropped upstream
-    # without a word, so cap here and say so in the response.
+    # without a word, so cap here and say so in the response. A requested ref
+    # that is NOT on disk is an error, never a silent text-only generation:
+    # the UI uploads every ref before attaching it, so a miss means the file
+    # went away and the user should hear about it instead of wondering why the
+    # output ignores the image they picked.
     wanted = r.ref_paths[:]
     used = wanted[:2]
-    imgs = []
+    imgs, missing = [], []
     for n in used:
         p = refs_dir / Path(n).name
         if p.is_file():
             imgs.append(Image.open(p).convert("RGB"))
+        else:
+            missing.append(Path(n).name)
+    if missing:
+        raise HTTPException(400, "reference image(s) not found in this project: "
+                                 + ", ".join(missing))
 
     kw = dict(seed=seed, input_prompt=prompt, n_prompt=(r.negative or None), sampling_steps=r.steps,
               width=r.width, height=r.height, guide_scale=0.0, batch_size=1,
@@ -604,32 +787,56 @@ def generate(r: Req):
         kw["input_ref_images"] = imgs
         kw["video_prompt_type"] = "KI"   # must contain "I" or refs are ignored
 
-    with LOCK:
-        t0 = time.time()
-        try:
-            out = STATE["model"].generate(**kw)
-        except Exception as e:
-            log("[gen] failed\n" + traceback.format_exc())
+    # Announce the job before waiting on LOCK so a UI that reloads mid-render
+    # can see the work is still in flight (health.busy) instead of assuming it
+    # died, and so we can refuse to pile unlimited requests onto the threadpool.
+    with GEN_LOCK:
+        # waiting counts the running request too (it is bumped before LOCK is
+        # taken), so the ceiling is 1 running + MAX_QUEUE sitting on LOCK.
+        if GEN["waiting"] >= 1 + MAX_QUEUE:
+            raise HTTPException(429, "the model is busy and the queue is full -- "
+                                     "wait for the current shot to finish")
+        GEN["waiting"] += 1
+
+    try:
+        with LOCK:
+            with GEN_LOCK:
+                GEN["busy"] = True
+                GEN["project"] = slug(r.project)
+                GEN["prompt"] = prompt
+                GEN["started"] = time.time()
+            t0 = time.time()
+            try:
+                out = STATE["model"].generate(**kw)
+            except Exception as e:
+                log("[gen] failed\n" + traceback.format_exc())
+                torch.cuda.empty_cache()
+                hint = ""
+                if "device" in str(e).lower() and STATE["report"].get("device_split", {}).get("moved"):
+                    hint = "  (cross-device -- try SPLIT_GPUS=0)"
+                raise HTTPException(500, f"{type(e).__name__}: {e}{hint}")
+            secs = round(time.time() - t0, 1)
+
+            t = out.detach().cpu() if hasattr(out, "detach") else out
+            if hasattr(t, "ndim") and t.ndim == 4:      # [C, 1, H, W]
+                t = t[:, 0]
+            img_ = Image.fromarray(t.permute(1, 2, 0).numpy()) if hasattr(t, "permute") else t
+
+            n = max([int(m.group(1)) for p in shots_dir.glob("shot_*.png")
+                     if (m := re.match(r"shot_(\d+)", p.name))] or [0]) + 1
+            name = f"shot_{n:03d}.png"
+            buf = io.BytesIO()
+            img_.save(buf, format="PNG")
+            atomic_write(shots_dir / name, buf.getvalue())
+            atomic_write((shots_dir / name).with_suffix(".json"),
+                         json.dumps({"prompt": r.prompt.strip(), "seed": seed, "steps": r.steps,
+                                     "generate_s": secs, "refs": used}).encode())
             torch.cuda.empty_cache()
-            hint = ""
-            if "device" in str(e).lower() and STATE["report"].get("device_split", {}).get("moved"):
-                hint = "  (cross-device -- try SPLIT_GPUS=0)"
-            raise HTTPException(500, f"{type(e).__name__}: {e}{hint}")
-        secs = round(time.time() - t0, 1)
-
-        t = out.detach().cpu() if hasattr(out, "detach") else out
-        if hasattr(t, "ndim") and t.ndim == 4:      # [C, 1, H, W]
-            t = t[:, 0]
-        img_ = Image.fromarray(t.permute(1, 2, 0).numpy()) if hasattr(t, "permute") else t
-
-        n = max([int(m.group(1)) for p in shots_dir.glob("shot_*.png")
-                 if (m := re.match(r"shot_(\d+)", p.name))] or [0]) + 1
-        name = f"shot_{n:03d}.png"
-        img_.save(shots_dir / name)
-        (shots_dir / name).with_suffix(".json").write_text(json.dumps(
-            {"prompt": r.prompt.strip(), "seed": seed, "steps": r.steps,
-             "generate_s": secs, "refs": used}))
-        torch.cuda.empty_cache()
+    finally:
+        with GEN_LOCK:
+            GEN["busy"] = False
+            GEN["started"] = 0.0
+            GEN["waiting"] = max(0, GEN["waiting"] - 1)
 
     rec = {"name": name, "generate_s": secs, "seed": seed, "project": slug(r.project),
            "refs_used": len(imgs), "refs_dropped": max(0, len(wanted) - 2)}
