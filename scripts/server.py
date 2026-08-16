@@ -50,6 +50,34 @@ from collections import deque
 from pathlib import Path
 from typing import Any
 
+
+def _restore_protobuf_getprototype() -> None:
+    """protobuf >= 4.22 removed MessageFactory.GetPrototype (renamed to
+    GetMessageClass) and 7.x moved the replacement to a module-level function.
+    Several packages in Wan2GP's dependency tree (jax, onnxruntime, tensorboard,
+    sherpa-onnx) still call the old method at import time, which raises
+    `AttributeError: 'MessageFactory' object has no attribute 'GetPrototype'`.
+    That error is benign noise (the calling import is optional for image
+    generation), but restore the method as a thin alias so it never fires and
+    never risks becoming fatal. Runs before load(), so the patch is in place
+    before any Wan2GP/torch import happens.
+    """
+    try:
+        from google.protobuf import message_factory as _mf
+        if not hasattr(_mf.MessageFactory, "GetPrototype"):
+            if hasattr(_mf.MessageFactory, "GetMessageClass"):
+                _mf.MessageFactory.GetPrototype = _mf.MessageFactory.GetMessageClass
+            elif hasattr(_mf, "GetMessageClass"):
+                def _get_prototype(self, descriptor):
+                    return _mf.GetMessageClass(descriptor)
+                _mf.MessageFactory.GetPrototype = _get_prototype
+    except Exception:
+        pass  # protobuf absent or unusual -- nothing to patch
+
+
+_restore_protobuf_getprototype()
+
+
 REPO = Path(os.environ.get("STUDIO_DIR", Path(__file__).resolve().parent.parent))
 WAN2GP = Path(os.environ.get("WAN2GP_DIR", "/kaggle/working/Wan2GP"))
 SHOTS = Path(os.environ.get("SHOTS_DIR", REPO / "shots"))
