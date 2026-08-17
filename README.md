@@ -1,31 +1,38 @@
 # Studio
 
-Reference corpus and production setup for making [Whymentary](https://www.youtube.com/@Whymentary)-style
-stickman explainer videos: black monoline characters on a pure white canvas, filled with
-flat saturated color that carries fixed meaning — red is heat and failure, green is
-biology, blue is water and cool. Mechanical metaphors for scientific concepts, and a
-visual beat every ~2 seconds.
+Production setup for making explainer-video shots with a flat-vector illustration
+style: thin uneven black outline, flat bucket-fill saturated color, no gradients or
+shading, coherent human figures (not stickmen). Color carries fixed meaning — red is
+heat and failure, green is biology, blue is water and cool. Mechanical metaphors for
+abstract concepts, and a visual beat every ~2 seconds.
+
+This is our **own house style**, not [Whymentary](https://www.youtube.com/@Whymentary)'s —
+it was chosen because it's what actually renders well through Krea 2 (Whymentary's
+monoline stickman look came out warped/uncanny in testing; this flat-vector look didn't).
+The Whymentary reference corpus below is kept for the *structural* side only — how to
+translate a script beat into a visual, pacing, mechanism-metaphor thinking — not for
+literal visual style. See [AGENTS.md](AGENTS.md) for the full house-style spec and the
+winning prompt clause.
 
 The engine is **Krea 2 Turbo** (text-to-image only, no references/img2img) running on a
-free Kaggle T4 x2, driven by a UI built for this pipeline. The repo also carries
-**the style bible** — frame-by-frame analysis of all 6 published channel videos — which
-is what the generated shots are matched against.
+free Kaggle T4 x2, driven by a UI built for this pipeline.
 
 ## What's here
 
 | Path | What it is |
 |---|---|
-| [WHYMENTARY_COMPLETE_MASTER_DISSECTION.md](WHYMENTARY_COMPLETE_MASTER_DISSECTION.md) | The main reference. Script-to-visual translation hierarchy, art direction standards, pop-in animation spec, verbatim per-video breakdowns, consistency checklist. Start here. |
-| [WHYMENTARY_STYLE_AND_PRODUCTION_DISSECTION.md](WHYMENTARY_STYLE_AND_PRODUCTION_DISSECTION.md) | The shorter companion. Exact color palette with hex values, character anatomy, pacing matrix, and the Illustrator → After Effects → mix pipeline. |
+| [NICHE.md](NICHE.md) | What we're actually making: an AI-focused sub-niche using Whymentary's script blueprint. Content modes, the extracted structural rules, AI-specific mechanical-analogy starting points, shot-list workflow. Start here for scripting. |
+| [WHYMENTARY_COMPLETE_MASTER_DISSECTION.md](WHYMENTARY_COMPLETE_MASTER_DISSECTION.md) | Script-to-visual translation hierarchy, pacing, verbatim per-video breakdowns. Structural reference only — visual-style detail in here is Whymentary's, not ours. |
+| [WHYMENTARY_STYLE_AND_PRODUCTION_DISSECTION.md](WHYMENTARY_STYLE_AND_PRODUCTION_DISSECTION.md) | The shorter companion. Same caveat: useful for pacing matrix and how they think about a shot, not for anatomy/linework/lettering, which is now ours instead of theirs. |
 | [frames/](frames/) | 42 hand-picked keyframes, 7 per video, at the narrative beats the dissections cite by filename (`01_hook_10s.jpg`, `04_scientific_cross_section_120s.jpg`, …). |
 | [dense_frames/](dense_frames/) | 222 evenly-sampled frames, ~40 per video. Use these for motion and pacing questions the 7 keyframes can't answer. |
 | [transcripts/](transcripts/) | Verbatim `.vtt` subtitles with timestamps for all 6 videos. Pair with `dense_frames/` to see exactly which visual lands on which spoken clause. |
 | [notebooks/studio.ipynb](notebooks/studio.ipynb) | Boots the whole thing on Kaggle: weights, model server, Studio UI, and VS Code. |
 | [scripts/server.py](scripts/server.py) | Warm Krea 2 model server. HTTP on `127.0.0.1:8711`. Holds the model, does the fp16 work and the dual-GPU split. |
-| [ui/index.html](ui/index.html) | The Studio UI. Style presets, palette, shot naming, live timing. Text prompt → shot. |
-| [shots/](shots/) | Generated output. Keepers go in `shots/final/`, which is the only part that's committed. |
+| [ui/index.html](ui/index.html) | The Studio UI. Style presets, palette, shot naming, live timing. Text prompt → shot. Polls every 5s, so any generation — from the UI or the API — appears automatically. |
+| [shots/](shots/) | Generated output. Gitignored — survives kernel restarts within the same Kaggle session, but not a session reset. Keepers go in `shots/final/`, the only part that's committed and durable. |
 
-The palette, in short — everything else is in the dissections:
+The palette, in short — everything else is in [AGENTS.md](AGENTS.md):
 
 | Role | Hex | Used for |
 |---|---|---|
@@ -61,6 +68,16 @@ image-to-image — the model is the plain Turbo, which is smaller and faster to 
 18 GB of weights do not fit in 16 GB of VRAM, so mmgp streams them from host RAM. That
 streaming — not compute — is the bottleneck. The compute floor at 1024×576 / 8 steps is
 roughly 18–22 s; a naive setup gives ~55–60 s.
+
+**Measured reality on Kaggle T4 x2, live-monitored with `nvidia-smi dmon`:** even with
+`device_split` and pinning both fully healthy, real generations land at ~55-60 s, not
+the 20-40 s the optimizations below target. GPU0 sits at 100% utilization but
+power-throttles at the T4's 70 W cap the whole time — SM clock oscillates 585-1020 MHz
+and never approaches the 1590 MHz boost. That's the card hitting its power ceiling under
+sustained diffusion compute, not a broken split or bad settings. Don't chase the 20-40s
+number by re-tuning `device_split`/pinning if `/api/health` already shows both healthy —
+this session's actual floor is the naive number. Fewer steps is the only lever that
+still moves it, roughly linearly (the UI's 4-step "Max speed" preset ≈ half the time).
 
 What moves the number:
 
