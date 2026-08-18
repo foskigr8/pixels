@@ -1,0 +1,509 @@
+{
+ "364": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "clip": [
+    "387",
+    0
+   ],
+   "text": [
+    "376",
+    0
+   ]
+  }
+ },
+ "376": {
+  "class_type": "PrimitiveStringMultiline",
+  "inputs": {
+   "value": "Egyptian royal in blue-and-gold headdress and high collar, white dress with golden embroidery and armbands, desert, robot soldiers in formation left and right. She walks steadily forward, head held level and gaze fixed ahead\u2014no dipping or lowering of the head. The camera performs a single, smooth push-in only: starting in a wider shot of her, the robots, and the desert, it moves steadily forward until she is in a medium or medium-close frame, then holds. She stops, posture and head still upright, and says: \u201cThe old gods are silent. I am not.\u201d Robot soldiers shift or march in place; sand and fabric move with the wind. No pull-back; the only camera move is the continuous push-in."
+  }
+ },
+ "384": {
+  "class_type": "UNETLoader",
+  "inputs": {
+   "unet_name": "LTX25-distilled-DiT-comfy-mix4x8-17GB.safetensors",
+   "weight_dtype": "default"
+  }
+ },
+ "362": {
+  "class_type": "PrimitiveInt",
+  "inputs": {
+   "value": 5
+  }
+ },
+ "363": {
+  "class_type": "PrimitiveBoolean",
+  "inputs": {
+   "value": false
+  }
+ },
+ "365": {
+  "class_type": "LTXVConditioning",
+  "inputs": {
+   "positive": [
+    "364",
+    0
+   ],
+   "negative": [
+    "373",
+    0
+   ],
+   "frame_rate": [
+    "359",
+    0
+   ]
+  }
+ },
+ "385": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "ltx-2.5-video-vae-bf16.safetensors"
+  }
+ },
+ "386": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "ltx-2.5-audio-vae-bf16.safetensors"
+  }
+ },
+ "372": {
+  "class_type": "PrimitiveInt",
+  "inputs": {
+   "value": 1280
+  }
+ },
+ "373": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "clip": [
+    "387",
+    0
+   ],
+   "text": "pc game, console game, video game, cartoon, childish, ugly"
+  }
+ },
+ "387": {
+  "class_type": "CLIPLoader",
+  "inputs": {
+   "clip_name": "gemma4-12b-with-proj-ltx-2.5-comfy-int8-convrot.safetensors",
+   "type": "ltxv",
+   "device": "default"
+  }
+ },
+ "360": {
+  "class_type": "PrimitiveInt",
+  "inputs": {
+   "value": 736
+  }
+ },
+ "352": {
+  "class_type": "KSamplerSelect",
+  "inputs": {
+   "sampler_name": "euler_ancestral"
+  }
+ },
+ "339": {
+  "class_type": "RandomNoise",
+  "inputs": {
+   "noise_seed": 900359092894726
+  }
+ },
+ "397": {
+  "class_type": "ManualSigmas",
+  "inputs": {
+   "sigmas": "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0"
+  }
+ },
+ "361": {
+  "class_type": "PrimitiveInt",
+  "inputs": {
+   "value": 24
+  }
+ },
+ "371": {
+  "class_type": "LatentUpscaleModelLoader",
+  "inputs": {
+   "model_name": "ltx-2.5-latent-spatial-upscaler-x2-bf16-1.0.safetensors"
+  }
+ },
+ "388": {
+  "class_type": "LTXVDualCFGGuider",
+  "inputs": {
+   "model": [
+    "384",
+    0
+   ],
+   "positive": [
+    "365",
+    0
+   ],
+   "negative": [
+    "365",
+    1
+   ],
+   "video_cfg": 1,
+   "audio_cfg": 1
+  }
+ },
+ "344": {
+  "class_type": "SamplerCustomAdvanced",
+  "inputs": {
+   "noise": [
+    "339",
+    0
+   ],
+   "guider": [
+    "388",
+    0
+   ],
+   "sampler": [
+    "352",
+    0
+   ],
+   "sigmas": [
+    "397",
+    0
+   ],
+   "latent_image": [
+    "377",
+    0
+   ]
+  }
+ },
+ "357": {
+  "class_type": "LTXVImgToVideoInplace",
+  "inputs": {
+   "vae": [
+    "385",
+    0
+   ],
+   "image": [
+    "350",
+    0
+   ],
+   "latent": [
+    "356",
+    0
+   ],
+   "bypass": [
+    "363",
+    0
+   ],
+   "strength": 0.7
+  }
+ },
+ "366": {
+  "class_type": "LTXVEmptyLatentAudio",
+  "inputs": {
+   "audio_vae": [
+    "386",
+    0
+   ],
+   "frames_number": [
+    "378",
+    1
+   ],
+   "frame_rate": [
+    "359",
+    1
+   ],
+   "batch_size": 1
+  }
+ },
+ "367": {
+  "class_type": "LTXVSeparateAVLatent",
+  "inputs": {
+   "av_latent": [
+    "344",
+    0
+   ]
+  }
+ },
+ "377": {
+  "class_type": "LTXVConcatAVLatent",
+  "inputs": {
+   "video_latent": [
+    "357",
+    0
+   ],
+   "audio_latent": [
+    "366",
+    0
+   ]
+  }
+ },
+ "351": {
+  "class_type": "ImageScale",
+  "inputs": {
+   "image": [
+    "9001",
+    0
+   ],
+   "upscale_method": "lanczos",
+   "width": 1536,
+   "height": 864,
+   "crop": "disabled"
+  }
+ },
+ "353": {
+  "class_type": "ComfyMathExpression",
+  "inputs": {
+   "values.a": [
+    "372",
+    0
+   ],
+   "expression": "a/2"
+  }
+ },
+ "355": {
+  "class_type": "ComfyMathExpression",
+  "inputs": {
+   "values.a": [
+    "360",
+    0
+   ],
+   "expression": "a/2"
+  }
+ },
+ "350": {
+  "class_type": "LTXVPreprocess",
+  "inputs": {
+   "image": [
+    "351",
+    0
+   ],
+   "img_compression": 18
+  }
+ },
+ "356": {
+  "class_type": "EmptyLTXVLatentVideo",
+  "inputs": {
+   "width": [
+    "353",
+    1
+   ],
+   "height": [
+    "355",
+    1
+   ],
+   "length": [
+    "378",
+    1
+   ],
+   "batch_size": 1
+  }
+ },
+ "348": {
+  "class_type": "LTXVLatentUpsampler",
+  "inputs": {
+   "samples": [
+    "367",
+    0
+   ],
+   "upscale_model": [
+    "371",
+    0
+   ],
+   "vae": [
+    "385",
+    0
+   ]
+  }
+ },
+ "349": {
+  "class_type": "LTXVImgToVideoInplace",
+  "inputs": {
+   "vae": [
+    "385",
+    0
+   ],
+   "image": [
+    "350",
+    0
+   ],
+   "latent": [
+    "348",
+    0
+   ],
+   "bypass": [
+    "363",
+    0
+   ],
+   "strength": 1
+  }
+ },
+ "359": {
+  "class_type": "ComfyMathExpression",
+  "inputs": {
+   "values.a": [
+    "361",
+    0
+   ],
+   "expression": "a"
+  }
+ },
+ "378": {
+  "class_type": "ComfyMathExpression",
+  "inputs": {
+   "values.a": [
+    "362",
+    0
+   ],
+   "values.b": [
+    "361",
+    0
+   ],
+   "expression": "a * b + 1"
+  }
+ },
+ "338": {
+  "class_type": "RandomNoise",
+  "inputs": {
+   "noise_seed": 42
+  }
+ },
+ "340": {
+  "class_type": "LTXVConcatAVLatent",
+  "inputs": {
+   "video_latent": [
+    "349",
+    0
+   ],
+   "audio_latent": [
+    "367",
+    1
+   ]
+  }
+ },
+ "396": {
+  "class_type": "ManualSigmas",
+  "inputs": {
+   "sigmas": "0.85, 0.7250, 0.4219, 0.0"
+  }
+ },
+ "391": {
+  "class_type": "LTXVDualCFGGuider",
+  "inputs": {
+   "model": [
+    "384",
+    0
+   ],
+   "positive": [
+    "365",
+    0
+   ],
+   "negative": [
+    "365",
+    1
+   ],
+   "video_cfg": 1,
+   "audio_cfg": 1
+  }
+ },
+ "341": {
+  "class_type": "KSamplerSelect",
+  "inputs": {
+   "sampler_name": "euler_ancestral"
+  }
+ },
+ "368": {
+  "class_type": "SamplerCustomAdvanced",
+  "inputs": {
+   "noise": [
+    "338",
+    0
+   ],
+   "guider": [
+    "391",
+    0
+   ],
+   "sampler": [
+    "341",
+    0
+   ],
+   "sigmas": [
+    "396",
+    0
+   ],
+   "latent_image": [
+    "340",
+    0
+   ]
+  }
+ },
+ "369": {
+  "class_type": "LTXVSeparateAVLatent",
+  "inputs": {
+   "av_latent": [
+    "368",
+    0
+   ]
+  }
+ },
+ "374": {
+  "class_type": "VAEDecodeTiled",
+  "inputs": {
+   "samples": [
+    "369",
+    0
+   ],
+   "vae": [
+    "385",
+    0
+   ],
+   "tile_size": 2048,
+   "overlap": 32,
+   "temporal_size": 256,
+   "temporal_overlap": 8
+  }
+ },
+ "358": {
+  "class_type": "LTXVAudioVAEDecode",
+  "inputs": {
+   "samples": [
+    "369",
+    1
+   ],
+   "audio_vae": [
+    "386",
+    0
+   ]
+  }
+ },
+ "370": {
+  "class_type": "CreateVideo",
+  "inputs": {
+   "images": [
+    "374",
+    0
+   ],
+   "audio": [
+    "358",
+    0
+   ],
+   "fps": [
+    "359",
+    0
+   ],
+   "bit_depth": 8
+  }
+ },
+ "9001": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "neon_cyborg_portrait.png"
+  }
+ },
+ "9002": {
+  "class_type": "SaveVideo",
+  "inputs": {
+   "video": [
+    "370",
+    0
+   ],
+   "filename_prefix": "video/ltx_bench",
+   "format": "auto",
+   "codec": "auto"
+  }
+ }
+}
